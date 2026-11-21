@@ -711,6 +711,28 @@ fn main() {
             }
             return;
         }
+        Mode::ImportState(path) => {
+            let text = match std::fs::read_to_string(&path) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("State import failed: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            let imported: State = match serde_json::from_str(&text) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("Invalid state file: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            if let Err(e) = imported.save() {
+                eprintln!("State import failed: {}", e);
+                std::process::exit(1);
+            }
+            print_line(&format!("State imported from {} ({} sessions)", path, imported.sessions.len()));
+            return;
+        }
         Mode::Watch => {
             let st = State::load();
             let interval = st.tick_interval_s.clamp(5, 300) as u64;
@@ -1251,6 +1273,7 @@ fn main() {
     });
 
     let models_state = model_cache.clone();
+    let views_model = views.clone();
     let tx_switch = switch_tx.clone();
     let summary_model = summary.clone();
     let model_rx_cell = Rc::new(RefCell::new(Some(model_rx)));
@@ -1271,7 +1294,11 @@ fn main() {
                     combo.append(Some(&key), &format!("{} ({})", label, m.provider));
                 }
                 if !models.is_empty() {
-                    combo.set_active(Some(0));
+                    let current = views_model.borrow().get(&sid).map(|v| v.model.clone()).unwrap_or_default();
+                    let active = models.iter().find(|m| !current.is_empty() && m.id == current)
+                        .map(|m| format!("{}|{}", m.id, m.provider))
+                        .or_else(|| Some(format!("{}|{}", models[0].id, models[0].provider)));
+                    combo.set_active_id(active.as_deref());
                 } else {
                     dialog.content_area().add(&gtk::Label::new(Some("No models returned by OpenCode.")));
                 }

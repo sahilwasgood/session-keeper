@@ -14,6 +14,7 @@ pub enum Mode {
     Watch,
     Version,
     ExportState(String),
+    ImportState(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,9 +36,14 @@ pub fn parse_args(args: &[String]) -> Options {
             "--export-audit" => mode = Mode::ExportAudit,
             "--watch" => mode = Mode::Watch,
             "--version" => mode = Mode::Version,
-            "--export-state" => {
+            "--export-state" | "--import-state" => {
+                let flag = args[i].clone();
                 if i + 1 < args.len() {
-                    mode = Mode::ExportState(args[i + 1].clone());
+                    mode = if flag == "--export-state" {
+                        Mode::ExportState(args[i + 1].clone())
+                    } else {
+                        Mode::ImportState(args[i + 1].clone())
+                    };
                     i += 1;
                 } else {
                     mode = Mode::Help;
@@ -112,6 +118,7 @@ pub const HELP: &str = "Session Keeper\nUsage: session-keeper-rust [options]\n\n
   --watch                      Print status every tick in the terminal
   --version                    Show version
   --export-state <path>        Copy state.json to a backup path
+  --import-state <path>        Restore state.json from a backup
   --export-audit               Write history + log to ~/session-keeper-audit.txt
   --json                       Machine-readable status output
   --dry-run                    Never send real nudges\n  --help                       Show this help\n";

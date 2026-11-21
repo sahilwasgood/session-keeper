@@ -106,3 +106,11 @@ fn json_flag_for_status() {
     assert_eq!(o.mode, Mode::Status);
     assert!(o.json);
 }
+
+#[test]
+fn import_state_mode_with_path() {
+    let o = parse_args(&args(&["session-keeper-rust", "--import-state", "/tmp/state.json"]));
+    assert_eq!(o.mode, Mode::ImportState("/tmp/state.json".to_string()));
+    let bad = parse_args(&args(&["session-keeper-rust", "--import-state"]));
+    assert_eq!(bad.mode, Mode::Help);
+}
