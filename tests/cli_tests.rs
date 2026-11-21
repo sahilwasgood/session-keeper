@@ -155,3 +155,11 @@ fn doctor_mode() {
     let o = parse_args(&args(&["session-keeper-rust", "--doctor"]));
     assert_eq!(o.mode, Mode::Doctor);
 }
+
+#[test]
+fn set_setting_accepts_slow_cooldown_keys() {
+    let o = parse_args(&args(&["session-keeper-rust", "--set-setting", "missing_cooldown", "7200"]));
+    assert_eq!(o.mode, Mode::SetSetting("missing_cooldown".into(), "7200".into()));
+    let o2 = parse_args(&args(&["session-keeper-rust", "--set-setting", "cap_cooldown", "60"]));
+    assert_eq!(o2.mode, Mode::SetSetting("cap_cooldown".into(), "60".into()));
+}

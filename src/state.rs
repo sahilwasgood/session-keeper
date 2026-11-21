@@ -130,7 +130,13 @@ pub struct State {
     pub sort_by_name: bool,
     #[serde(default = "default_cooldown")]
     pub alert_cooldown_s: i64,
+    #[serde(default = "default_slow_cooldown")]
+    pub missing_alert_cooldown_s: i64,
+    #[serde(default = "default_slow_cooldown")]
+    pub cap_alert_cooldown_s: i64,
 }
+
+fn default_slow_cooldown() -> i64 { 3600 }
 
 impl Default for State {
     fn default() -> Self {
@@ -150,6 +156,8 @@ impl Default for State {
             missing_alert_ms: 0,
             sort_by_name: false,
             alert_cooldown_s: 300,
+            missing_alert_cooldown_s: 3600,
+            cap_alert_cooldown_s: 3600,
         }
     }
 }
@@ -198,6 +206,8 @@ impl State {
         s.global_nudge_cap = s.global_nudge_cap.max(0);
         s.tick_interval_s = s.tick_interval_s.clamp(5, 300);
         s.alert_cooldown_s = s.alert_cooldown_s.max(0);
+        s.missing_alert_cooldown_s = s.missing_alert_cooldown_s.max(0);
+        s.cap_alert_cooldown_s = s.cap_alert_cooldown_s.max(0);
         s.last_tick_ms = s.last_tick_ms.max(0);
         s.cap_alert_ms = s.cap_alert_ms.max(0);
         s.missing_alert_ms = s.missing_alert_ms.max(0);

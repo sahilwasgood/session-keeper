@@ -116,3 +116,14 @@ fn tick_merge_preserves_user_edits() {
     assert_eq!(st.sessions[0].prompt.as_deref(), Some("my prompt"));
     assert_eq!(st.last_tick_ms, 100);
 }
+
+#[test]
+fn slow_alert_cooldowns_default_and_normalize() {
+    let st = State::default();
+    assert_eq!(st.missing_alert_cooldown_s, 3600);
+    assert_eq!(st.cap_alert_cooldown_s, 3600);
+    let json = r#"{"missing_alert_cooldown_s":-5,"cap_alert_cooldown_s":99}"#;
+    let normalized = State::from_json(json).unwrap();
+    assert_eq!(normalized.missing_alert_cooldown_s, 0);
+    assert_eq!(normalized.cap_alert_cooldown_s, 99);
+}

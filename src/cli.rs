@@ -147,7 +147,8 @@ Options:
   --pause <sid>                     Pause one session
   --resume <sid>                    Resume one session
   --set-prompt <sid> <text>         Set that session's nudge prompt
-  --set-setting <key> <value>       Change min_gap, cap, global_cap, interval, cooldown, away, enabled, dry_run, notify
+  --set-setting <key> <value>       Change min_gap, cap, global_cap, interval, cooldown,
+                                    missing_cooldown, cap_cooldown, away, enabled, dry_run, notify
   --watch                           Print status every tick in the terminal
   --version                         Show version
   --doctor                          Check database, credentials, API and notifier

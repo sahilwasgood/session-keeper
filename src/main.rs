@@ -114,7 +114,8 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
         if !session_exists(&conn, &s.id) {
             let last = state.borrow().sessions.iter().find(|x| x.id == s.id)
                 .map(|x| x.missing_alert_ms).unwrap_or(0);
-            if now - last > 3_600_000 {
+            let missing_cooldown = state.borrow().missing_alert_cooldown_s * 1000;
+            if now - last > missing_cooldown {
                 notify("Session Keeper", &format!("Watched session {} is missing from OpenCode", short_id(&s.id)));
                 if let Some(x) = state.borrow_mut().sessions.iter_mut().find(|x| x.id == s.id) {
                     x.missing_alert_ms = now;
@@ -201,7 +202,8 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
         if global_cap > 0 && used_global >= global_cap {
             log_line(&format!("{}: hold global cap {}/{}", s.id, used_global, global_cap));
             let last_alert = state.borrow().cap_alert_ms;
-            if now - last_alert > 3_600_000 {
+            let cap_cooldown = state.borrow().cap_alert_cooldown_s * 1000;
+            if now - last_alert > cap_cooldown {
                 notify("Session Keeper", &format!("Global nudge cap reached ({}/hour)", global_cap));
                 state.borrow_mut().cap_alert_ms = now;
                 let _ = state.borrow().save();
@@ -905,7 +907,7 @@ fn main() {
         Mode::SetSetting(key, value) => {
             let mut st = State::load();
             let parsed = match key.as_str() {
-                "min_gap" | "cap" | "global_cap" | "interval" | "cooldown" => value.parse::<i64>().ok(),
+                "min_gap" | "cap" | "global_cap" | "interval" | "cooldown" | "missing_cooldown" | "cap_cooldown" => value.parse::<i64>().ok(),
                 "away" | "enabled" | "dry_run" | "notify" => match value.as_str() {
                     "1" | "true" | "on" => Some(1),
                     "0" | "false" | "off" => Some(0),
@@ -926,6 +928,8 @@ fn main() {
                 "global_cap" => st.global_nudge_cap = number,
                 "interval" => st.tick_interval_s = number,
                 "cooldown" => st.alert_cooldown_s = number,
+                "missing_cooldown" => st.missing_alert_cooldown_s = number,
+                "cap_cooldown" => st.cap_alert_cooldown_s = number,
                 "away" => st.away_mode = number != 0,
                 "enabled" => st.enabled = number != 0,
                 "dry_run" => st.persist_dry_run = number != 0,
@@ -1374,6 +1378,21 @@ fn main() {
     row3.add(&cooldown_spin);
     settings_box.add(&row3);
 
+    let row_cooldowns = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    row_cooldowns.add(&gtk::Label::new(Some("Missing-session cooldown (s):")));
+    let missing_cooldown_spin = gtk::SpinButton::new(
+        Some(&gtk::Adjustment::new(state.borrow().missing_alert_cooldown_s as f64, 0.0, 86400.0, 60.0, 3600.0, 0.0)),
+        1.0, 0,
+    );
+    row_cooldowns.add(&missing_cooldown_spin);
+    row_cooldowns.add(&gtk::Label::new(Some("Cap-alert cooldown (s):")));
+    let cap_cooldown_spin = gtk::SpinButton::new(
+        Some(&gtk::Adjustment::new(state.borrow().cap_alert_cooldown_s as f64, 0.0, 86400.0, 60.0, 3600.0, 0.0)),
+        1.0, 0,
+    );
+    row_cooldowns.add(&cap_cooldown_spin);
+    settings_box.add(&row_cooldowns);
+
     let enabled_cb = gtk::CheckButton::with_label("Watching enabled (global off switch)");
     enabled_cb.set_active(state.borrow().enabled);
     settings_box.add(&enabled_cb);
@@ -1408,6 +1427,8 @@ fn main() {
     let tx_settings = tx.clone();
     let busy_settings = busy.clone();
     let timer_settings = timer.clone();
+    let missing_cooldown_settings = missing_cooldown_spin.clone();
+    let cap_cooldown_settings = cap_cooldown_spin.clone();
     save_settings.connect_clicked(move |_| {
         let p = def_prompt.text().trim().to_string();
         let default_prompt = if p.is_empty() { "continue, dont stop".to_string() } else { p };
@@ -1425,6 +1446,8 @@ fn main() {
             st.persist_notifications = notify;
             st.sort_by_name = sort_cb.is_active();
             st.alert_cooldown_s = cooldown_spin.value() as i64;
+            st.missing_alert_cooldown_s = missing_cooldown_settings.value() as i64;
+            st.cap_alert_cooldown_s = cap_cooldown_settings.value() as i64;
             st.tick_interval_s = interval_spin.value() as i64;
             let _ = st.save();
         }

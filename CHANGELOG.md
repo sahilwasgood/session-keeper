@@ -17,6 +17,7 @@
 - A database outage no longer refreshes the watchdog heartbeat, so the stale-watchdog alert fires as intended.
 - New `--doctor` command reports database, credentials, notifier, and API reachability.
 - `--check-now --json` emits a machine-readable tick result with summary, cap remaining, and per-session views.
+- Missing-session and cap-alert cooldowns are now configurable in Settings and via `--set-setting`, defaulting to one hour.
 
 ## v0.1.0 (2026-11-22)
 
