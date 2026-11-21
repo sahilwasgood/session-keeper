@@ -66,6 +66,8 @@ pub struct State {
     pub cap_alert_ms: i64,
     #[serde(default)]
     pub missing_alert_ms: i64,
+    #[serde(default)]
+    pub sort_by_name: bool,
 }
 
 impl Default for State {
@@ -84,6 +86,7 @@ impl Default for State {
             persist_notifications: true,
             cap_alert_ms: 0,
             missing_alert_ms: 0,
+            sort_by_name: false,
         }
     }
 }

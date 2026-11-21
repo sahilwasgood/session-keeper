@@ -8,7 +8,7 @@ use session_keeper_rust::nudge::{append_history, decide, fetch_models, log_line,
 use session_keeper_rust::process::{pid_alive, read_lock};
 use session_keeper_rust::state::{states_differ, Session, State};
 use session_keeper_rust::safety::{fingerprint, should_nudge_after_debounce};
-use session_keeper_rust::ui::{format_age, matches_filter, needs_attention, prompt_display, short_id, status_changed, status_class, status_priority, status_text, summary_line, CSS};
+use session_keeper_rust::ui::{format_age, matches_filter, needs_attention, prompt_display, short_id, sort_key, status_changed, status_class, status_text, summary_line, CSS};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::Path;
@@ -303,6 +303,7 @@ fn refresh(
     }
     let sessions = state.borrow().sessions.clone();
     let default_prompt = state.borrow().default_prompt.clone();
+    let by_name = state.borrow().sort_by_name;
     let view_map = views.borrow();
     let filter_text = filter.borrow();
     let attention_on = *attention.borrow();
@@ -311,9 +312,12 @@ fn refresh(
         items.retain(|(_, v)| v.map(|x| needs_attention(&x.status)).unwrap_or(false));
     }
     items.sort_by_key(|(s, v)| {
-        let prio = v.map(|x| status_priority(&x.status)).unwrap_or(4);
-        let name = format!("{}{}", v.map(|x| x.title.as_str()).unwrap_or(""), s.id);
-        (prio, name)
+        sort_key(
+            &v.map(|x| x.status).unwrap_or(Status::Clean),
+            v.map(|x| x.title.as_str()).unwrap_or(""),
+            &s.id,
+            by_name,
+        )
     });
     for (s, view) in items {
         let view = view;
@@ -393,6 +397,46 @@ fn refresh(
         card.add(&meta);
 
         let actions = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let details = icon_button("Details", "help-about-symbolic");
+        let sid_details = s.id.clone();
+        let st_details = state.clone();
+        let views_details = views.clone();
+        details.connect_clicked(move |_| {
+            let sid = sid_details.clone();
+            let s = st_details.borrow().sessions.iter().find(|x| x.id == sid).cloned();
+            let v = views_details.borrow().get(&sid).cloned();
+            let body = match (s, v) {
+                (Some(sess), Some(view)) => format!(
+                    "Session: {}\nStatus: {} ({})\nModel: {}\nPrompt: {}\nNudges: {}\nLast action: {}\nLast progress: {}\nIdle since: {}\nPresent in OpenCode: {}",
+                    sess.id,
+                    status_text(&view.status),
+                    view.reason,
+                    if view.model.is_empty() { "unknown" } else { &view.model },
+                    prompt_display(sess.prompt.as_deref(), &st_details.borrow().default_prompt),
+                    sess.nudges,
+                    if sess.last_action.is_empty() { "never" } else { &sess.last_action },
+                    format_age(view.progress_ms, now_ms()),
+                    if view.idle_ms > 0 { format_age(view.idle_ms, now_ms()) } else { "none".to_string() },
+                    view.exists,
+                ),
+                _ => "Session data unavailable".to_string(),
+            };
+            let dlg = gtk::Dialog::with_buttons(
+                Some("Session details"),
+                None::<&gtk::Window>,
+                gtk::DialogFlags::MODAL,
+                &[("Close", gtk::ResponseType::Close)],
+            );
+            let label = gtk::Label::new(Some(&body));
+            label.set_xalign(0.0);
+            label.set_line_wrap(true);
+            label.set_selectable(true);
+            dlg.content_area().add(&label);
+            dlg.show_all();
+            dlg.connect_response(|dlg, _| dlg.close());
+        });
+        actions.add(&details);
+
         let edit = icon_button("Edit prompt", "document-edit-symbolic");
         let st = state.clone();
         let list_c = list.clone();
@@ -524,6 +568,13 @@ fn edit_prompt(
     });
 }
 
+fn print_line(line: &str) {
+    use std::io::Write;
+    let mut stdout = std::io::stdout().lock();
+    let _ = stdout.write_all(line.as_bytes());
+    let _ = stdout.write_all(b"\n");
+}
+
 fn write_audit() -> std::io::Result<std::path::PathBuf> {
     let history = tail_file(&Config::history_path(), 1000);
     let log = tail_file(&Config::log_path(), 1000);
@@ -593,7 +644,7 @@ fn main() {
         Mode::CheckNow => {
             let st = Rc::new(RefCell::new(State::load()));
             let out = run_tick(st.borrow().clone());
-            println!("{}", out.summary);
+            print_line(&format!("{}", out.summary));
             return;
         }
         Mode::Status => {
@@ -607,7 +658,7 @@ fn main() {
             return;
         }
         Mode::Version => {
-            println!("Session Keeper {} (Rust)", env!("CARGO_PKG_VERSION"));
+            print_line(&format!("Session Keeper {} (Rust)", env!("CARGO_PKG_VERSION")));
             return;
         }
         Mode::ExportState(path) => {
@@ -624,13 +675,13 @@ fn main() {
         Mode::Watch => {
             let st = State::load();
             let interval = st.tick_interval_s.clamp(5, 300) as u64;
-            println!("Watching {} sessions, tick every {}s (Ctrl+C to stop)", st.sessions.len(), interval);
+            print_line(&format!("Watching {} sessions, tick every {}s (Ctrl+C to stop)", st.sessions.len(), interval));
             loop {
                 let current = State::load();
                 let out = run_tick(current);
-                println!("{}", out.summary);
+                print_line(&format!("{}", out.summary));
                 for (sid, view) in out.views {
-                    println!("  {} {} {}", short_id(&sid), status_text(&view.status), view.reason);
+                    print_line(&format!("  {} {} {}", short_id(&sid), status_text(&view.status), view.reason));
                 }
                 std::thread::sleep(std::time::Duration::from_secs(interval));
             }
@@ -642,7 +693,7 @@ fn main() {
                 Some(s) => {
                     s.enabled = enable;
                     let _ = st.save();
-                    println!("{} {}", sid, if enable { "resumed" } else { "paused" });
+                    print_line(&format!("{} {}", sid, if enable { "resumed" } else { "paused" }));
                 }
                 None => {
                     eprintln!("Session {} is not in the watch list", sid);
@@ -657,7 +708,7 @@ fn main() {
                 Some(s) => {
                     s.prompt = if text.trim().is_empty() { None } else { Some(text.trim().to_string()) };
                     let _ = st.save();
-                    println!("Prompt set for {}", sid);
+                    print_line(&format!("Prompt set for {}", sid));
                 }
                 None => {
                     eprintln!("Session {} is not in the watch list", sid);
@@ -689,14 +740,14 @@ fn main() {
             let prompt = prompt.trim();
             let prompt = if prompt.is_empty() { "continue" } else { prompt };
             if Config::dry_run() {
-                println!("Would kick {} with: {}", sid, prompt);
+                print_line(&format!("Would kick {} with: {}", sid, prompt));
                 return;
             }
             match send_nudge(&Config::api_base(), &Config::password(), &sid, prompt) {
                 Ok(()) => {
                     append_history(&sid, "nudge", prompt);
                     log_line(&format!("{}: kicked from CLI", sid));
-                    println!("Kicked {}", sid);
+                    print_line(&format!("Kicked {}", sid));
                 }
                 Err(e) => {
                     eprintln!("Kick failed: {}", e);
@@ -712,18 +763,18 @@ fn main() {
                 Some(f) => m.id.contains(f) || m.name.contains(f),
                 None => true,
             }) {
-                println!("{} | {} | {}", m.id, m.provider, m.name);
+                print_line(&format!("{} | {} | {}", m.id, m.provider, m.name));
                 shown += 1;
                 if shown >= 30 { break; }
             }
-            println!("Total available: {} models (showing {})", models.len(), shown);
+            print_line(&format!("Total available: {} models (showing {})", models.len(), shown));
             return;
         }
         Mode::SetModel(sid, id, provider) => {
             match switch_model(&Config::api_base(), &Config::password(), &sid, &id, &provider) {
                 Ok(()) => {
                     log_line(&format!("{}: model switched to {} ({})", sid, id, provider));
-                    println!("Model switched for {}", sid);
+                    print_line(&format!("Model switched for {}", sid));
                 }
                 Err(e) => {
                     eprintln!("Model switch failed: {}", e);
@@ -934,6 +985,9 @@ fn main() {
     row2.add(&cap);
     settings_box.add(&row2);
     settings_box.add(&away);
+    let sort_cb = gtk::CheckButton::with_label("Sort sessions by name instead of priority");
+    sort_cb.set_active(state.borrow().sort_by_name);
+    settings_box.add(&sort_cb);
 
     let global_cap = gtk::SpinButton::new(
         Some(&gtk::Adjustment::new(state.borrow().global_nudge_cap as f64, 0.0, 500.0, 1.0, 10.0, 0.0)),
@@ -982,6 +1036,7 @@ fn main() {
         let _ = st.save();
         st.persist_dry_run = dry_cb.is_active();
         st.persist_notifications = notify_cb.is_active();
+        st.sort_by_name = sort_cb.is_active();
         std::env::set_var("SESSION_KEEPER_DRY_RUN", if st.persist_dry_run { "1" } else { "0" });
         std::env::set_var("SESSION_KEEPER_NOTIFY", if st.persist_notifications { "1" } else { "0" });
         arm_timer(&st_settings, &tx_settings, &busy_settings, &timer_settings);

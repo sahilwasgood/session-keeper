@@ -45,6 +45,11 @@ pub fn format_age(ts_ms: i64, now_ms: i64) -> String {
     if m == 0 { format!("{}h", h) } else { format!("{}h {}m", h, m) }
 }
 
+pub fn sort_key(status: &Status, title: &str, id: &str, by_name: bool) -> (i32, String) {
+    let prio = if by_name { 0 } else { status_priority(status) };
+    (prio, format!("{}{}", title, id))
+}
+
 pub fn status_changed(prev: &str, next: &str) -> bool {
     prev != next
 }

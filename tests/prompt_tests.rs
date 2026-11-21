@@ -48,3 +48,13 @@ fn rotate_keeps_recent_lines() {
     assert_eq!(lines[0], "line 2000");
     assert_eq!(lines[999], "line 2999");
 }
+
+#[test]
+fn sort_key_by_name_or_priority() {
+    use session_keeper_rust::db::Status;
+    use session_keeper_rust::ui::sort_key;
+    assert_eq!(sort_key(&Status::Due, "tg", "ses_a", false).0, 0);
+    assert_eq!(sort_key(&Status::Clean, "tg", "ses_a", false).0, 4);
+    assert_eq!(sort_key(&Status::Due, "tg", "ses_a", true).0, 0);
+    assert_eq!(sort_key(&Status::Due, "a", "ses_a", true).1, "ases_a");
+}
