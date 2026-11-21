@@ -10,3 +10,5 @@
 
 3. Credential file mode limitation on fuseblk mount: document, not fixable locally.
 4. Away-mode semantics decided: keep question-aware label; global off switch is the pause control.
+
+7. DONE: SSE event-driven wakeups with 30s fallback.

@@ -3,6 +3,7 @@ use gtk::prelude::*;
 use rusqlite::{Connection, OpenFlags};
 use session_keeper_rust::cli::{parse_args, Mode, HELP};
 use session_keeper_rust::config::Config;
+use session_keeper_rust::events::watch_events;
 use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_exists, session_model, session_title, Status};
 use session_keeper_rust::nudge::{append_history, decide, fetch_models, fetch_sessions, has_pending_human_input, log_line, notify, nudges_in_last_hour_all, send_nudge, switch_model, Decision, ModelInfo, SessionInfo};
 use session_keeper_rust::process::create_lock;
@@ -14,7 +15,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::mpsc::{channel, Sender, TryRecvError};
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 static MODEL_TX: OnceLock<Sender<(String, Vec<ModelInfo>)>> = OnceLock::new();
@@ -1046,6 +1048,8 @@ fn main() {
     let (switch_tx, switch_rx) = channel::<(String, Result<(), String>)>();
     let (kick_tx, kick_rx) = channel::<(String, i64, Result<(), String>)>();
     let (add_tx, add_rx) = channel::<(String, bool)>();
+    let (wake_tx, wake_rx) = channel::<()>();
+    let event_stop = Arc::new(AtomicBool::new(false));
     let _ = ADD_TX.set(add_tx.clone());
     let (session_tx, session_rx) = channel::<Vec<SessionInfo>>();
     let _ = SESSION_TX.set(session_tx.clone());
@@ -1057,7 +1061,11 @@ fn main() {
     window.set_title("Session Keeper");
     window.set_default_size(960, 680);
     window.set_size_request(760, 520);
-    window.connect_destroy(|_| gtk::main_quit());
+    let stop_on_close = event_stop.clone();
+    window.connect_destroy(move |_| {
+        stop_on_close.store(true, Ordering::Relaxed);
+        gtk::main_quit();
+    });
     let st_key = state.clone();
     let tx_key = tx.clone();
     let busy_key = busy.clone();
@@ -1714,6 +1722,26 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
             }
         }
         glib::ControlFlow::Continue
+    });
+
+    let wake_rx_cell = Rc::new(RefCell::new(Some(wake_rx)));
+    let st_wake = state.clone();
+    let tx_wake = tx.clone();
+    let busy_wake = busy.clone();
+    glib::timeout_add_local(Duration::from_millis(200), move || {
+        if let Some(r) = wake_rx_cell.borrow_mut().as_mut() {
+            while r.try_recv().is_ok() {
+                launch_tick(&st_wake, &tx_wake, &busy_wake);
+            }
+        }
+        glib::ControlFlow::Continue
+    });
+
+    let event_api = Config::api_base();
+    let event_pw = Config::password();
+    let event_stop_thread = event_stop.clone();
+    std::thread::spawn(move || {
+        watch_events(&event_api, &event_pw, wake_tx, event_stop_thread);
     });
 
     arm_timer(&state, &tx, &busy, &timer);
