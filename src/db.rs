@@ -54,6 +54,15 @@ fn last_assistant(conn: &Connection, sid: &str) -> (i64, String) {
     }
 }
 
+pub fn session_model(conn: &Connection, sid: &str) -> String {
+    let raw: Option<String> = conn.query_row(
+        "SELECT model FROM session_v2 WHERE id=?1", [sid], |r| r.get(0))
+        .optional().unwrap_or(None);
+    raw.and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.get("id").and_then(|x| x.as_str()).map(str::to_string))
+        .unwrap_or_default()
+}
+
 pub fn session_exists(conn: &Connection, sid: &str) -> bool {
     conn.query_row("SELECT 1 FROM session_v2 WHERE id=?1", [sid], |_| Ok(()))
         .optional()

@@ -3,8 +3,8 @@ use gtk::prelude::*;
 use rusqlite::{Connection, OpenFlags};
 use session_keeper_rust::cli::{parse_args, Mode, HELP};
 use session_keeper_rust::config::Config;
-use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_exists, session_title, Status};
-use session_keeper_rust::nudge::{append_history, decide, log_line, notify, nudges_in_last_hour_all, send_nudge, Decision};
+use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_exists, session_model, session_title, Status};
+use session_keeper_rust::nudge::{append_history, decide, fetch_models, log_line, notify, nudges_in_last_hour_all, send_nudge, switch_model, Decision, ModelInfo};
 use session_keeper_rust::process::{pid_alive, read_lock};
 use session_keeper_rust::state::{Session, State};
 use session_keeper_rust::safety::{fingerprint, should_nudge_after_debounce};
@@ -14,7 +14,10 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::mpsc::{channel, Sender, TryRecvError};
+use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+static MODEL_TX: OnceLock<Sender<(String, Vec<ModelInfo>)>> = OnceLock::new();
 
 #[derive(Clone)]
 struct SessionView {
@@ -24,6 +27,7 @@ struct SessionView {
     idle_ms: i64,
     reason: String,
     exists: bool,
+    model: String,
 }
 
 struct TickOutcome {
@@ -218,6 +222,7 @@ fn run_tick(snapshot: State) -> TickOutcome {
                 idle_ms: last_idle_ts(&conn, &s.id),
                 reason: if session_exists(&conn, &s.id) { reason(&status).to_string() } else { "missing_from_opencode".to_string() },
                 exists: session_exists(&conn, &s.id),
+                model: session_model(&conn, &s.id),
             };
             views.insert(s.id.clone(), view);
         }
@@ -357,6 +362,10 @@ fn refresh(
                 if v.idle_ms > 0 { format_age(v.idle_ms, now_ms()) } else { "none".to_string() }
             )
         }).unwrap_or_default();
+        let receipts = match view {
+            Some(v) if !v.model.is_empty() => format!("{} | model {}", receipts, v.model),
+            _ => receipts,
+        };
         let receipt_label = gtk::Label::new(Some(&receipts));
         receipt_label.style_context().add_class("note");
         receipt_label.set_xalign(0.0);
@@ -379,6 +388,21 @@ fn refresh(
             edit_prompt(&st, &list_c, &views_c, &filter_c, &attention_c, &sid_edit, cur.as_deref());
         }));
         actions.add(&edit);
+
+        let model_btn = icon_button("Model", "preferences-system-symbolic");
+        let sid_model = s.id.clone();
+        let tx_model = MODEL_TX.get().expect("model channel not initialized").clone();
+        model_btn.connect_clicked(move |_| {
+            let sid = sid_model.clone();
+            let tx = tx_model.clone();
+            let api = Config::api_base();
+            let pw = Config::password();
+            std::thread::spawn(move || {
+                let models = fetch_models(&api, &pw);
+                let _ = tx.send((sid, models));
+            });
+        });
+        actions.add(&model_btn);
 
         let del = icon_button("Remove", "user-trash-symbolic");
         let st = state.clone();
@@ -539,6 +563,10 @@ fn main() {
     let busy = Rc::new(Cell::new(false));
     let timer: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
     let (tx, rx) = channel::<TickOutcome>();
+    let (model_tx, model_rx) = channel::<(String, Vec<ModelInfo>)>();
+    let _ = MODEL_TX.set(model_tx.clone());
+    let (switch_tx, switch_rx) = channel::<(String, Result<(), String>)>();
+    let model_cache: Rc<RefCell<HashMap<String, Vec<ModelInfo>>>> = Rc::new(RefCell::new(HashMap::new()));
 
     let window = gtk::Window::new(gtk::WindowType::Toplevel);
     window.set_title("Session Keeper");
@@ -868,6 +896,71 @@ fn main() {
                 }
                 Err(TryRecvError::Empty) => {}
                 Err(TryRecvError::Disconnected) => {}
+            }
+        }
+        glib::ControlFlow::Continue
+    });
+
+    let models_state = model_cache.clone();
+    let tx_switch = switch_tx.clone();
+    let summary_model = summary.clone();
+    let model_rx_cell = Rc::new(RefCell::new(Some(model_rx)));
+    glib::timeout_add_local(Duration::from_millis(200), move || {
+        if let Some(r) = model_rx_cell.borrow_mut().as_mut() {
+            if let Ok((sid, models)) = r.try_recv() {
+                models_state.borrow_mut().insert(sid.clone(), models.clone());
+                let dialog = gtk::Dialog::with_buttons(
+                    Some("Switch model"),
+                    None::<&gtk::Window>,
+                    gtk::DialogFlags::MODAL,
+                    &[("Cancel", gtk::ResponseType::Cancel), ("Switch", gtk::ResponseType::Ok)],
+                );
+                let combo = gtk::ComboBoxText::new();
+                for m in &models {
+                    let key = format!("{}|{}", m.id, m.provider);
+                    let label = if m.name.is_empty() { m.id.clone() } else { m.name.clone() };
+                    combo.append(Some(&key), &format!("{} ({})", label, m.provider));
+                }
+                if !models.is_empty() { combo.set_active(Some(0)); }
+                dialog.content_area().add(&combo);
+                dialog.show_all();
+                let sid2 = sid.clone();
+                let tx2 = tx_switch.clone();
+                let _summary = summary_model.clone();
+                dialog.connect_response(move |dlg, resp| {
+                    if resp == gtk::ResponseType::Ok {
+                        if let Some(active) = combo.active_id() {
+                            let parts: Vec<&str> = active.split('|').collect();
+                            if parts.len() == 2 {
+                                let api = Config::api_base();
+                                let pw = Config::password();
+                                let sid3 = sid2.clone();
+                                let tx3 = tx2.clone();
+                                let id = parts[0].to_string();
+                                let provider = parts[1].to_string();
+                                std::thread::spawn(move || {
+                                    let result = switch_model(&api, &pw, &sid3, &id, &provider);
+                                    let _ = tx3.send((sid3, result));
+                                });
+                            }
+                        }
+                    }
+                    dlg.close();
+                });
+            }
+        }
+        glib::ControlFlow::Continue
+    });
+
+    let switch_rx_cell = Rc::new(RefCell::new(Some(switch_rx)));
+    let summary_switch = summary.clone();
+    glib::timeout_add_local(Duration::from_millis(200), move || {
+        if let Some(r) = switch_rx_cell.borrow_mut().as_mut() {
+            if let Ok((sid, result)) = r.try_recv() {
+                match result {
+                    Ok(()) => summary_switch.set_label(&format!("Model switched for {}", short_id(&sid))),
+                    Err(e) => summary_switch.set_label(&format!("Model switch failed: {}", e)),
+                }
             }
         }
         glib::ControlFlow::Continue

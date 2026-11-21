@@ -186,3 +186,46 @@ pub fn log_line(message: &str) {
     }
 }
 
+
+#[derive(Debug, Clone)]
+pub struct ModelInfo {
+    pub id: String,
+    pub provider: String,
+    pub name: String,
+}
+
+pub fn fetch_models(api: &str, password: &str) -> Vec<ModelInfo> {
+    let auth = format!("Basic {}", b64(format!("opencode:{}", password).as_bytes()));
+    let url = format!("{}/api/model", api.trim_end_matches('/'));
+    let resp = match ureq::get(&url)
+        .timeout(Duration::from_secs(15))
+        .set("Authorization", &auth)
+        .call()
+    {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+    let text = resp.into_string().unwrap_or_default();
+    let value: serde_json::Value = match serde_json::from_str(&text) { Ok(v) => v, Err(_) => return Vec::new() };
+    let items = value.get("data").and_then(|d| d.as_array()).cloned().unwrap_or_default();
+    items.iter().filter_map(|m| {
+        Some(ModelInfo {
+            id: m.get("id")?.as_str()?.to_string(),
+            provider: m.get("providerID")?.as_str()?.to_string(),
+            name: m.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string(),
+        })
+    }).collect()
+}
+
+pub fn switch_model(api: &str, password: &str, sid: &str, model_id: &str, provider: &str) -> Result<(), String> {
+    let auth = format!("Basic {}", b64(format!("opencode:{}", password).as_bytes()));
+    let url = format!("{}/api/session/{}/model", api.trim_end_matches('/'), sid);
+    let body = serde_json::json!({"model": {"id": model_id, "providerID": provider}}).to_string();
+    let resp = ureq::post(&url)
+        .timeout(Duration::from_secs(10))
+        .set("Authorization", &auth)
+        .set("Content-Type", "application/json")
+        .send_string(&body)
+        .map_err(|e| e.to_string())?;
+    if (200..300).contains(&resp.status()) { Ok(()) } else { Err(format!("HTTP {}", resp.status())) }
+}
