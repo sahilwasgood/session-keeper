@@ -78,3 +78,5 @@ API error surfacing: added fetch_models_result/fetch_sessions_result (ureq::Erro
 Preflight: GUI and --watch modes log DB/credentials/notify transport status with concrete paths at startup; one-shot CLI modes skip it to avoid log spam. Verified live log lines and zero new lines from --status.
 
 R-013 partial: tick outcome carries cap_remaining (computed from global cap and hourly history); GUI status line shows "global cap N left" (verified via AT-SPI: 54 left), omitted when unknown/unlimited. 31 binaries green.
+
+R-010: loop detection now catches A->B->A via Session.prev_hash (serde default, migrates old state) and safety::is_repeating_output, with unit test for A->A/A->B->A/non-loop cases. Live app shows no false loop holds; 31 binaries green.

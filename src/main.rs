@@ -8,7 +8,7 @@ use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, 
 use session_keeper_rust::nudge::{append_history, decide, fetch_models_result, fetch_sessions_result, has_pending_human_input, log_line, notify, notify_send_available, nudges_in_last_hour_all, send_nudge, switch_model, Decision, ModelInfo, SessionInfo};
 use session_keeper_rust::process::create_lock;
 use session_keeper_rust::state::{apply_tick_fields, states_differ, GlobalTickFields, Session, State, TickFields};
-use session_keeper_rust::safety::{fingerprint, should_nudge_after_debounce};
+use session_keeper_rust::safety::{fingerprint, is_repeating_output, should_nudge_after_debounce};
 use session_keeper_rust::ui::{format_age, history_for_sid, matches_filter, needs_attention, prompt_display, short_id, sort_key, status_changed, status_class, status_text, summary_line, CSS};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -171,15 +171,15 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
         }
 
         let fp = fingerprint(&last_assistant_text(&conn, &s.id));
-        let hash_same = state
+        let (last_hash, prev_hash) = state
             .borrow()
             .sessions
             .iter()
             .find(|x| x.id == s.id)
-            .and_then(|x| x.last_hash.as_deref())
-            == Some(fp.as_str());
-        if hash_same {
-            log_line(&format!("{}: hold loop (unchanged output)", s.id));
+            .map(|x| (x.last_hash.clone(), x.prev_hash.clone()))
+            .unwrap_or((None, None));
+        if is_repeating_output(&fp, last_hash.as_deref(), prev_hash.as_deref()) {
+            log_line(&format!("{}: hold loop (repeating output)", s.id));
             held += 1;
             continue;
         }
@@ -236,6 +236,7 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
                         x.nudges += 1;
                         x.last_action = format!("nudged {}", session_keeper_rust::config::format_log_time(now / 1000));
                         x.idle_streak = 0;
+                        x.prev_hash = x.last_hash.take();
                         x.last_hash = Some(fp);
                     }
                 }
@@ -275,6 +276,7 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
         nudges: s.nudges,
         idle_streak: s.idle_streak,
         last_hash: s.last_hash.clone(),
+        prev_hash: s.prev_hash.clone(),
         last_action: s.last_action.clone(),
         last_status: s.last_status.clone(),
         last_alert_ms: s.last_alert_ms,

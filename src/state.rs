@@ -44,6 +44,8 @@ pub struct Session {
     #[serde(default)]
     pub last_hash: Option<String>,
     #[serde(default)]
+    pub prev_hash: Option<String>,
+    #[serde(default)]
     pub last_status: String,
     #[serde(default)]
     pub last_alert_ms: i64,
@@ -70,6 +72,7 @@ impl Default for Session {
             last_action: String::new(),
             idle_streak: 0,
             last_hash: None,
+            prev_hash: None,
             last_status: String::new(),
             last_alert_ms: 0,
             question_alert_ms: 0,
@@ -233,6 +236,7 @@ pub struct TickFields {
     pub nudges: i64,
     pub idle_streak: i32,
     pub last_hash: Option<String>,
+    pub prev_hash: Option<String>,
     pub last_action: String,
     pub last_status: String,
     pub last_alert_ms: i64,
@@ -260,6 +264,7 @@ pub fn apply_tick_fields(state: &mut State, updates: &[TickFields], globals: Glo
             s.nudges = u.nudges;
             s.idle_streak = u.idle_streak;
             s.last_hash = u.last_hash.clone();
+            s.prev_hash = u.prev_hash.clone();
             s.last_action = u.last_action.clone();
             s.last_status = u.last_status.clone();
             s.last_alert_ms = u.last_alert_ms;

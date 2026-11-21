@@ -10,7 +10,7 @@ fn tf(id: &str) -> TickFields {
         last_nudge: 0,
         nudges: 0,
         idle_streak: 0,
-        last_hash: None,
+        last_hash: None, prev_hash: None,
         last_action: String::new(),
         last_status: String::new(),
         last_alert_ms: 0,

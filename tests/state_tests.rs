@@ -31,7 +31,7 @@ fn save_then_load_preserves_session_fields() {
         question_alert_ms: 111,
         stalled_alert_ms: 222,
         missing_alert_ms: 333, failure_alert_ms: 444,
-        last_action: "nudged".to_string(), idle_streak: 0, last_hash: None, last_status: String::new(), last_alert_ms: 0,
+        last_action: "nudged".to_string(), idle_streak: 0, last_hash: None, prev_hash: None, last_status: String::new(), last_alert_ms: 0,
     });
     let path = Path::new("/tmp/sk-roundtrip-state.json");
     s.save_to_path(path).unwrap();
@@ -96,7 +96,7 @@ fn tick_merge_preserves_user_edits() {
         last_nudge: 100,
         nudges: before_nudges + 1,
         idle_streak: 0,
-        last_hash: None,
+        last_hash: None, prev_hash: None,
         last_action: "nudged".to_string(),
         last_status: "Due".to_string(),
         last_alert_ms: 0,
