@@ -48,6 +48,8 @@ pub struct State {
     pub global_nudge_cap: i64,
     #[serde(default)]
     pub sessions: Vec<Session>,
+    #[serde(default)]
+    pub last_tick_ms: i64,
 }
 
 impl Default for State {
@@ -60,6 +62,7 @@ impl Default for State {
             away_mode: false,
             global_nudge_cap: 60,
             sessions: Vec::new(),
+            last_tick_ms: 0,
         }
     }
 }

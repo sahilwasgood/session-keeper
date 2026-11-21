@@ -1,3 +1,4 @@
+use std::time::Duration;
 use crate::config::Config;
 use crate::db::Status;
 use crate::state::{Session, State};
@@ -89,7 +90,38 @@ pub fn prompt_url(api: &str, sid: &str) -> String {
 }
 
 pub fn send_nudge(api: &str, password: &str, sid: &str, text: &str) -> Result<(), String> {
-    send_nudge_with_timeout(api, password, sid, text, std::time::Duration::from_secs(10))
+    send_nudge_with_retry(api, password, sid, text, std::time::Duration::from_secs(10), 2)
+}
+
+pub fn send_nudge_with_retry(
+    api: &str,
+    password: &str,
+    sid: &str,
+    text: &str,
+    timeout: std::time::Duration,
+    attempts: usize,
+) -> Result<(), String> {
+    let mut last = String::new();
+    for i in 0..attempts.max(1) {
+        match send_nudge_with_timeout(api, password, sid, text, timeout) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                last = e;
+                let retryable = last.contains("status code 5")
+                    || last.contains("status code 429")
+                    || last.contains("Network Error")
+                    || last.contains("timed out");
+                if !retryable || i + 1 >= attempts { break; }
+                let nanos = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.subsec_nanos())
+                    .unwrap_or(0);
+                let jitter = Duration::from_nanos((nanos % 150_000_000) as u64);
+                std::thread::sleep(Duration::from_millis(50) + jitter);
+            }
+        }
+    }
+    Err(last)
 }
 
 pub fn send_nudge_with_timeout(

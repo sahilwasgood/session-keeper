@@ -3,11 +3,11 @@ use gtk::prelude::*;
 use rusqlite::{Connection, OpenFlags};
 use session_keeper_rust::cli::{parse_args, Mode, HELP};
 use session_keeper_rust::config::Config;
-use session_keeper_rust::db::{classify, last_assistant_text, last_idle_ts, session_title, Status};
+use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_title, Status};
 use session_keeper_rust::nudge::{append_history, decide, log_line, notify, nudges_in_last_hour_all, send_nudge, Decision};
 use session_keeper_rust::state::{Session, State};
 use session_keeper_rust::safety::{fingerprint, should_nudge_after_debounce};
-use session_keeper_rust::ui::{matches_filter, prompt_display, short_id, status_class, status_text, summary_line, CSS};
+use session_keeper_rust::ui::{format_age, matches_filter, prompt_display, short_id, status_class, status_text, summary_line, CSS};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::Path;
@@ -19,6 +19,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 struct SessionView {
     status: Status,
     title: String,
+    progress_ms: i64,
+    idle_ms: i64,
+    reason: String,
 }
 
 struct TickOutcome {
@@ -171,9 +174,8 @@ fn tick(state: &Rc<RefCell<State>>) -> String {
         }
     }
 
-    if nudged > 0 {
-        let _ = state.borrow().save();
-    }
+    state.borrow_mut().last_tick_ms = now;
+    let _ = state.borrow().save();
     summary_line(&session_keeper_rust::config::format_log_time(now / 1000), nudged, held)
 }
 
@@ -184,9 +186,13 @@ fn run_tick(snapshot: State) -> TickOutcome {
     let mut views = HashMap::new();
     if let Some(conn) = open_db() {
         for s in st.borrow().sessions.iter() {
+            let status = classify(&conn, &s.id, &st.borrow());
             let view = SessionView {
-                status: classify(&conn, &s.id, &st.borrow()),
+                status,
                 title: session_title(&conn, &s.id),
+                progress_ms: last_assistant_ts(&conn, &s.id),
+                idle_ms: last_idle_ts(&conn, &s.id),
+                reason: reason(&status).to_string(),
             };
             views.insert(s.id.clone(), view);
         }
@@ -210,6 +216,19 @@ fn launch_tick(
         let outcome = run_tick(snapshot);
         let _ = tx.send(outcome);
     });
+}
+
+fn today_digest() -> String {
+    let now = now_ms();
+    let day_start = now - (now % 86_400_000);
+    let nudges = std::fs::read_to_string(Config::history_path())
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+        .filter(|v| v.get("kind").and_then(|s| s.as_str()) == Some("nudge"))
+        .filter(|v| v.get("t").and_then(|t| t.as_i64()).unwrap_or(0) >= day_start)
+        .count();
+    format!("Today: {} nudges sent", nudges)
 }
 
 fn tail_file(path: &Path, lines: usize) -> String {
@@ -252,6 +271,7 @@ fn refresh(
         badge.style_context().add_class("badge");
         badge.style_context().add_class(status_class(&status));
         badge.set_size_request(118, -1);
+        if let Some(v) = view { badge.set_tooltip_text(Some(&v.reason)); }
         top.add(&badge);
 
         let name = if title.is_empty() {
@@ -288,6 +308,18 @@ fn refresh(
             s.nudges,
             if s.last_action.is_empty() { "never" } else { &s.last_action }
         )));
+        let receipts = view.map(|v| {
+            format!(
+                "state {} | last progress {} | idle {}",
+                v.reason,
+                format_age(v.progress_ms, now_ms()),
+                if v.idle_ms > 0 { format_age(v.idle_ms, now_ms()) } else { "none".to_string() }
+            )
+        }).unwrap_or_default();
+        let receipt_label = gtk::Label::new(Some(&receipts));
+        receipt_label.style_context().add_class("note");
+        receipt_label.set_xalign(0.0);
+        card.add(&receipt_label);
         meta.style_context().add_class("session-meta");
         meta.set_xalign(0.0);
         meta.set_line_wrap(true);
@@ -645,6 +677,9 @@ fn main() {
     history_label.style_context().add_class("session-meta");
     history_label.set_xalign(0.0);
     history_label.set_line_wrap(true);
+    let digest = gtk::Label::new(Some(&today_digest()));
+    digest.style_context().add_class("summary");
+    diag_box.add(&digest);
     diag_box.add(&gtk::Label::new(Some("Recent nudges:")));
     diag_box.add(&history_label);
     let log_label = gtk::Label::new(Some(&tail_file(&Config::log_path(), 25)));
@@ -666,6 +701,7 @@ fn main() {
     let list_ui = list.clone();
     let history_ui = history_label.clone();
     let log_ui = log_label.clone();
+    let digest_ui = digest.clone();
     glib::timeout_add_local(Duration::from_millis(150), move || {
         let mut guard = rx_cell.borrow_mut();
         if let Some(r) = guard.as_mut() {
@@ -676,6 +712,7 @@ fn main() {
                     summary_ui.set_label(&outcome.summary);
                     history_ui.set_label(&tail_file(&Config::history_path(), 25));
                     log_ui.set_label(&tail_file(&Config::log_path(), 25));
+                    digest_ui.set_label(&today_digest());
                     refresh(&st_ui, &list_ui, &views_ui, &filter_ui);
                     busy_ui.set(false);
                 }
@@ -691,6 +728,19 @@ fn main() {
     let busy_timer = busy.clone();
     glib::timeout_add_seconds_local(30, move || {
         launch_tick(&st_timer, &tx_timer, &busy_timer);
+        glib::ControlFlow::Continue
+    });
+
+    let st_beat = state.clone();
+    let summary_beat = summary.clone();
+    let beat_summary = summary.clone();
+    glib::timeout_add_seconds_local(10, move || {
+        let last = st_beat.borrow().last_tick_ms;
+        if last > 0 && now_ms() - last > 120_000 {
+            beat_summary.set_label(&format!("WATCHDOG STALE - last tick {}", format_age(last, now_ms())));
+        } else {
+            let _ = &summary_beat;
+        }
         glib::ControlFlow::Continue
     });
 

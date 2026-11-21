@@ -54,6 +54,10 @@ fn last_assistant(conn: &Connection, sid: &str) -> (i64, String) {
     }
 }
 
+pub fn last_assistant_ts(conn: &Connection, sid: &str) -> i64 {
+    last_assistant(conn, sid).0
+}
+
 pub fn last_assistant_text(conn: &Connection, sid: &str) -> String {
     last_assistant(conn, sid).1
 }

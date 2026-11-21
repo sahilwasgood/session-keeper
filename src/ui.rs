@@ -27,6 +27,24 @@ pub fn short_id(id: &str) -> String {
     id.chars().rev().take(12).collect::<Vec<_>>().into_iter().rev().collect()
 }
 
+pub fn format_age(ts_ms: i64, now_ms: i64) -> String {
+    let secs = ((now_ms - ts_ms).max(0)) / 1000;
+    if secs < 2 {
+        return "just now".to_string();
+    }
+    if secs < 60 {
+        return format!("{}s", secs);
+    }
+    if secs < 3600 {
+        let m = secs / 60;
+        let s = secs % 60;
+        return if s == 0 { format!("{}m", m) } else { format!("{}m {}s", m, s) };
+    }
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    if m == 0 { format!("{}h", h) } else { format!("{}h {}m", h, m) }
+}
+
 pub fn matches_filter(id: &str, title: &str, filter: &str) -> bool {
     if filter.trim().is_empty() { return true; }
     let f = filter.trim().to_lowercase();
