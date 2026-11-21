@@ -1135,18 +1135,18 @@ fn main() {
     let attention_cb = gtk::CheckButton::with_label("Attention only");
     controls.add(&attention_cb);
 
-    let pause_all = gtk::ToggleButton::with_label(if state.borrow().enabled { "Pause all" } else { "Resume all" });
-    pause_all.style_context().add_class("destructive-action");
+    let pause_toggle = gtk::ToggleButton::with_label(if state.borrow().enabled { "Pause all" } else { "Resume all" });
+    pause_toggle.style_context().add_class("destructive-action");
     let st_pause = state.clone();
     let summary_pause = summary.clone();
-    pause_all.connect_toggled(move |b| {
+    pause_toggle.connect_toggled(move |b| {
         let enabled = !b.is_active();
         st_pause.borrow_mut().enabled = enabled;
         let _ = st_pause.borrow().save();
         b.set_label(if enabled { "Pause all" } else { "Resume all" });
         summary_pause.set_label(if enabled { "Watching enabled" } else { "All automatic nudges paused" });
     });
-    controls.add(&pause_all);
+    controls.add(&pause_toggle);
 
     let add = icon_button("Add session", "list-add-symbolic");
     let st_add = state.clone();
@@ -1457,6 +1457,7 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
     let filter_ui = filter.clone();
     let attention_ui = attention.clone();
     let summary_ui = summary.clone();
+    let pause_ui = pause_toggle.clone();
     let title_ui = window.clone();
     let busy_ui = busy.clone();
     let list_ui = list.clone();
@@ -1469,9 +1470,15 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
             match r.try_recv() {
                 Ok(outcome) => {
                     {
-                        let mut st = st_ui.borrow_mut();
-                        apply_tick_fields(&mut st, &outcome.updates, outcome.globals);
-                        let _ = st.save();
+                        // Disk is authoritative for settings and watch-list edits made by
+                        // the CLI or another process. Only tick-owned fields come from
+                        // the worker snapshot, so an external pause cannot be undone by
+                        // a tick finishing a moment later.
+                        let mut merged = State::load();
+                        apply_tick_fields(&mut merged, &outcome.updates, outcome.globals);
+                        let _ = merged.save();
+                        pause_ui.set_label(if merged.enabled { "Pause all" } else { "Resume all" });
+                        *st_ui.borrow_mut() = merged;
                     }
                     *views_ui.borrow_mut() = outcome.views;
                     let watched = st_ui.borrow().sessions.len();
@@ -1696,6 +1703,7 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
     });
 
     let st_watch = state.clone();
+    let pause_watch = pause_toggle.clone();
     let list_watch = list.clone();
     let views_watch = views.clone();
     let filter_watch = filter.clone();
@@ -1709,6 +1717,7 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
         };
         if changed {
             *st_watch.borrow_mut() = disk.clone();
+            pause_watch.set_label(if disk.enabled { "Pause all" } else { "Resume all" });
             // A settings change made by CLI or another process must reach the
             // watchdog workers, not just the GUI's in-memory state.
             std::env::set_var(

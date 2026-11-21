@@ -6,3 +6,5 @@
 - XTEST synthetic clicks still land on the wrong window; use AT-SPI harness for GUI tests.
 
 Event-driven SSE wakeups implemented as accelerator; 30s polling retained as fallback.
+
+Resolved: toolbar pause label no longer drifts after external CLI pause/resume. Root cause was Rust variable shadowing between the toolbar toggle and the Settings bulk pause button.

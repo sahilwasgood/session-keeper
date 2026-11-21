@@ -56,3 +56,5 @@ SSE filter verified; 29 test binaries green with event_url regression test.
 SSE observability: connection/disconnection logged once, retry errors throttled to once per minute; live restart logged "event stream connected".
 
 Toolbar pause verified via AT-SPI: Pause all -> enabled=false, label "Resume all"; second click -> enabled=true, label "Pause all".
+
+Toolbar pause label drift fixed: the Settings bulk button shadowed the toolbar toggle variable, so label updates hit the wrong widget. Renamed toolbar toggle to pause_toggle; external CLI pause now flips toolbar to "Resume all" (verified via AT-SPI and screenshot) and back.
