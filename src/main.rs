@@ -451,6 +451,12 @@ fn refresh(
         top.add(&pause);
         card.add(&top);
 
+        let session_cap = st.borrow().max_nudges_per_hour;
+        let nudge_text = if session_cap > 0 {
+            format!("{}/{}", s.nudges, session_cap)
+        } else {
+            format!("{}", s.nudges)
+        };
         let meta = gtk::Label::new(Some(&format!(
             "prompt: {}   nudges {}   last: {}",
             {
@@ -461,7 +467,7 @@ fn refresh(
                     p
                 }
             },
-            s.nudges,
+            nudge_text,
             if s.last_action.is_empty() { "never" } else { &s.last_action }
         )));
         let receipts = view.map(|v| {
