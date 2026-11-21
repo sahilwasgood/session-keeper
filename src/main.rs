@@ -570,6 +570,21 @@ fn main() {
         std::env::set_var("SESSION_KEEPER_DRY_RUN", "1");
     }
     let resume_mode = matches!(&opts.mode, Mode::Resume(_));
+    let lock_path = Config::lock_path();
+    let lock_needed = matches!(opts.mode, Mode::Gui | Mode::CheckNow | Mode::Watch);
+    if lock_needed {
+        if let Some(pid) = read_lock(&lock_path) {
+            if pid_alive(pid) && pid != std::process::id() as i32 {
+                eprintln!("Session Keeper is already running (pid {}).", pid);
+                return;
+            }
+        }
+        if std::fs::write(&lock_path, std::process::id().to_string()).is_err() {
+            eprintln!("Could not write lock file; continuing without single-instance protection.");
+        }
+    }
+    let _lock_guard = if lock_needed { Some(LockGuard(lock_path)) } else { None };
+
     match opts.mode {
         Mode::Help => {
             print!("{}", HELP);
@@ -718,21 +733,6 @@ fn main() {
             return;
         }
         Mode::Gui => {}
-    }
-
-    let lock_path = Config::lock_path();
-    let lock_needed = matches!(opts.mode, Mode::Gui | Mode::CheckNow | Mode::Watch);
-    if lock_needed {
-    if let Some(pid) = read_lock(&lock_path) {
-        if pid_alive(pid) && pid != std::process::id() as i32 {
-            eprintln!("Session Keeper is already running (pid {}).", pid);
-            return;
-        }
-    }
-    if std::fs::write(&lock_path, std::process::id().to_string()).is_err() {
-        eprintln!("Could not write lock file; continuing without single-instance protection.");
-    }
-    let _lock_guard = LockGuard(lock_path);
     }
 
     gtk::init().expect("GTK3 failed to initialize");
