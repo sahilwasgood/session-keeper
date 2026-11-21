@@ -11,6 +11,9 @@ pub enum Mode {
     Pause(String),
     Resume(String),
     SetPrompt(String, String),
+    Watch,
+    Version,
+    ExportState(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,6 +31,17 @@ pub fn parse_args(args: &[String]) -> Options {
             "--check-now" => mode = Mode::CheckNow,
             "--status" => mode = Mode::Status,
             "--export-audit" => mode = Mode::ExportAudit,
+            "--watch" => mode = Mode::Watch,
+            "--version" => mode = Mode::Version,
+            "--export-state" => {
+                if i + 1 < args.len() {
+                    mode = Mode::ExportState(args[i + 1].clone());
+                    i += 1;
+                } else {
+                    mode = Mode::Help;
+                    break;
+                }
+            }
             "--pause" | "--resume" | "--set-prompt" => {
                 let flag = args[i].clone();
                 let need = if flag == "--set-prompt" { 2 } else { 1 };
@@ -92,5 +106,8 @@ pub fn parse_args(args: &[String]) -> Options {
 pub const HELP: &str = "Session Keeper\nUsage: session-keeper-rust [options]\n\nOptions:\n  (none)                       Open the window and run the watchdog while it is open\n  --check-now                  Run one watchdog tick in the terminal and exit\n  --status                     Print session statuses and exit\n  --kick <session-id>          Send the nudge prompt to one session now\n  --models [filter]            List available models, optionally filtered\n  --set-model <sid> <id> <provider>   Switch one session's model\n  --pause <sid>                Pause one session
   --resume <sid>               Resume one session
   --set-prompt <sid> <text>    Set that session's nudge prompt
+  --watch                      Print status every tick in the terminal
+  --version                    Show version
+  --export-state <path>        Copy state.json to a backup path
   --export-audit               Write history + log to ~/session-keeper-audit.txt
   --dry-run                    Never send real nudges\n  --help                       Show this help\n";

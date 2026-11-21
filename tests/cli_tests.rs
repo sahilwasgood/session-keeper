@@ -85,3 +85,17 @@ fn set_prompt_mode() {
         Mode::SetPrompt("ses_a".to_string(), "keep working".to_string())
     );
 }
+
+#[test]
+fn watch_and_version_modes() {
+    assert_eq!(parse_args(&args(&["session-keeper-rust", "--watch"])).mode, Mode::Watch);
+    assert_eq!(parse_args(&args(&["session-keeper-rust", "--version"])).mode, Mode::Version);
+}
+
+#[test]
+fn export_state_mode_with_path() {
+    let o = parse_args(&args(&["session-keeper-rust", "--export-state", "/tmp/state.json"]));
+    assert_eq!(o.mode, Mode::ExportState("/tmp/state.json".to_string()));
+    let bad = parse_args(&args(&["session-keeper-rust", "--export-state"]));
+    assert_eq!(bad.mode, Mode::Help);
+}

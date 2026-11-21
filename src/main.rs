@@ -587,6 +587,35 @@ fn main() {
             }
             return;
         }
+        Mode::Version => {
+            println!("Session Keeper {} (Rust)", env!("CARGO_PKG_VERSION"));
+            return;
+        }
+        Mode::ExportState(path) => {
+            let st = State::load();
+            match std::fs::write(&path, serde_json::to_string_pretty(&st).unwrap_or_default()) {
+                Ok(()) => println!("State exported to {}", path),
+                Err(e) => {
+                    eprintln!("State export failed: {}", e);
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+        Mode::Watch => {
+            let st = State::load();
+            let interval = st.tick_interval_s.clamp(5, 300) as u64;
+            println!("Watching {} sessions, tick every {}s (Ctrl+C to stop)", st.sessions.len(), interval);
+            loop {
+                let current = State::load();
+                let out = run_tick(current);
+                println!("{}", out.summary);
+                for (sid, view) in out.views {
+                    println!("  {} {} {}", short_id(&sid), status_text(&view.status), view.reason);
+                }
+                std::thread::sleep(std::time::Duration::from_secs(interval));
+            }
+        }
         Mode::Pause(sid) | Mode::Resume(sid) => {
             let mut st = State::load();
             let enable = resume_mode;
@@ -917,6 +946,10 @@ fn main() {
     notify_cb.set_active(Config::notifications());
     settings_box.add(&notify_cb);
 
+    let test_notify = icon_button("Test notification", "dialog-information-symbolic");
+    test_notify.connect_clicked(|_| notify("Session Keeper", "Test notification from Session Keeper"));
+    settings_box.add(&test_notify);
+
     let save_settings = icon_button("Save settings", "document-save-symbolic");
     save_settings.style_context().add_class("suggested-action");
     let st_settings = state.clone();
@@ -1058,6 +1091,7 @@ fn main() {
     let filter_ui = filter.clone();
     let attention_ui = attention.clone();
     let summary_ui = summary.clone();
+    let title_ui = window.clone();
     let busy_ui = busy.clone();
     let list_ui = list.clone();
     let history_ui = history_label.clone();
@@ -1075,6 +1109,7 @@ fn main() {
                     let prefix = if Config::dry_run() { "DRY RUN | " } else { "" };
                     summary_ui.set_label(&format!("{}{}  |  {} watched, {} need attention",
                         prefix, outcome.summary, watched, attention));
+                    title_ui.set_title(&format!("Session Keeper - {} need attention", attention));
                     history_ui.set_label(&tail_file(&Config::history_path(), 25));
                     log_ui.set_label(&tail_file(&Config::log_path(), 25));
                     digest_ui.set_label(&today_digest());
