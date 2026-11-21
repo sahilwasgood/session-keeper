@@ -5,7 +5,7 @@ use session_keeper_rust::cli::{parse_args, Mode, HELP};
 use session_keeper_rust::config::{load_env_file, Config};
 use session_keeper_rust::events::watch_events;
 use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_exists, session_model, session_title, Status};
-use session_keeper_rust::nudge::{append_history, decide, fetch_models, fetch_sessions, has_pending_human_input, log_line, notify, nudges_in_last_hour_all, send_nudge, switch_model, Decision, ModelInfo, SessionInfo};
+use session_keeper_rust::nudge::{append_history, decide, fetch_models_result, fetch_sessions_result, has_pending_human_input, log_line, notify, nudges_in_last_hour_all, send_nudge, switch_model, Decision, ModelInfo, SessionInfo};
 use session_keeper_rust::process::create_lock;
 use session_keeper_rust::state::{apply_tick_fields, states_differ, GlobalTickFields, Session, State, TickFields};
 use session_keeper_rust::safety::{fingerprint, should_nudge_after_debounce};
@@ -19,10 +19,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-static MODEL_TX: OnceLock<Sender<(String, Vec<ModelInfo>)>> = OnceLock::new();
+static MODEL_TX: OnceLock<Sender<(String, Result<Vec<ModelInfo>, String>)>> = OnceLock::new();
 static KICK_TX: OnceLock<Sender<(String, i64, Result<(), String>)>> = OnceLock::new();
 static ADD_TX: OnceLock<Sender<(String, bool)>> = OnceLock::new();
-static SESSION_TX: OnceLock<Sender<Vec<SessionInfo>>> = OnceLock::new();
+static SESSION_TX: OnceLock<Sender<Result<Vec<SessionInfo>, String>>> = OnceLock::new();
 
 #[derive(Clone)]
 struct SessionView {
@@ -549,7 +549,7 @@ fn refresh(
             let api = Config::api_base();
             let pw = Config::password();
             std::thread::spawn(move || {
-                let models = fetch_models(&api, &pw);
+                let models = fetch_models_result(&api, &pw);
                 let _ = tx.send((sid, models));
             });
         });
@@ -837,8 +837,14 @@ fn main() {
             return;
         }
         Mode::Sessions => {
-            for s in fetch_sessions(&Config::api_base(), &Config::password()) {
-                print_line(&format!("{}  {}", s.id, s.title));
+            match fetch_sessions_result(&Config::api_base(), &Config::password()) {
+                Ok(sessions) => for s in sessions {
+                    print_line(&format!("{}  {}", s.id, s.title));
+                },
+                Err(e) => {
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
             }
             return;
         }
@@ -1000,7 +1006,13 @@ fn main() {
             return;
         }
         Mode::Models(filter) => {
-            let models = fetch_models(&Config::api_base(), &Config::password());
+            let models = match fetch_models_result(&Config::api_base(), &Config::password()) {
+                Ok(models) => models,
+                Err(e) => {
+                    eprintln!("{}", e);
+                    std::process::exit(1);
+                }
+            };
             let mut shown = 0;
             for m in models.iter().filter(|m| match &filter {
                 Some(f) => m.id.contains(f) || m.name.contains(f),
@@ -1068,7 +1080,7 @@ fn main() {
     let busy = Rc::new(Cell::new(false));
     let timer: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
     let (tx, rx) = channel::<TickOutcome>();
-    let (model_tx, model_rx) = channel::<(String, Vec<ModelInfo>)>();
+    let (model_tx, model_rx) = channel::<(String, Result<Vec<ModelInfo>, String>)>();
     let _ = MODEL_TX.set(model_tx.clone());
     let (switch_tx, switch_rx) = channel::<(String, Result<(), String>)>();
     let (kick_tx, kick_rx) = channel::<(String, i64, Result<(), String>)>();
@@ -1077,7 +1089,7 @@ fn main() {
     let event_stop = Arc::new(AtomicBool::new(false));
     let event_connected = Arc::new(AtomicBool::new(false));
     let _ = ADD_TX.set(add_tx.clone());
-    let (session_tx, session_rx) = channel::<Vec<SessionInfo>>();
+    let (session_tx, session_rx) = channel::<Result<Vec<SessionInfo>, String>>();
     let _ = SESSION_TX.set(session_tx.clone());
     let _ = KICK_TX.set(kick_tx.clone());
     let model_cache: Rc<RefCell<HashMap<String, Vec<ModelInfo>>>> = Rc::new(RefCell::new(HashMap::new()));
@@ -1207,7 +1219,7 @@ fn main() {
         let api = Config::api_base();
         let pw = Config::password();
         std::thread::spawn(move || {
-            let sessions = fetch_sessions(&api, &pw);
+            let sessions = fetch_sessions_result(&api, &pw);
             let _ = tx.send(sessions);
         });
     });
@@ -1557,7 +1569,14 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
     let model_rx_cell = Rc::new(RefCell::new(Some(model_rx)));
     glib::timeout_add_local(Duration::from_millis(200), move || {
         if let Some(r) = model_rx_cell.borrow_mut().as_mut() {
-            if let Ok((sid, models)) = r.try_recv() {
+            if let Ok((sid, result)) = r.try_recv() {
+                let models = match result {
+                    Ok(models) => models,
+                    Err(e) => {
+                        summary_model.set_label(&format!("Models failed: {}", e));
+                        return glib::ControlFlow::Continue;
+                    }
+                };
                 models_state.borrow_mut().insert(sid.clone(), models.clone());
                 let dialog = gtk::Dialog::with_buttons(
                     Some("Switch model"),
@@ -1666,7 +1685,14 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
     let summary_discover = summary.clone();
     glib::timeout_add_local(Duration::from_millis(200), move || {
         if let Some(r) = session_rx_cell.borrow_mut().as_mut() {
-            if let Ok(found) = r.try_recv() {
+            if let Ok(result) = r.try_recv() {
+                let found = match result {
+                    Ok(found) => found,
+                    Err(e) => {
+                        summary_discover.set_label(&format!("Discover failed: {}", e));
+                        return glib::ControlFlow::Continue;
+                    }
+                };
                 if found.is_empty() {
                     summary_discover.set_label("No sessions returned by OpenCode");
                 } else {

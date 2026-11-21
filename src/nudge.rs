@@ -271,29 +271,35 @@ pub struct ModelInfo {
 }
 
 pub fn fetch_models(api: &str, password: &str) -> Vec<ModelInfo> {
+    fetch_models_result(api, password).unwrap_or_default()
+}
+
+pub fn fetch_models_result(api: &str, password: &str) -> Result<Vec<ModelInfo>, String> {
     let auth = format!("Basic {}", b64(format!("opencode:{}", password).as_bytes()));
     let url = format!("{}/api/model", api.trim_end_matches('/'));
-    let resp = match ureq::get(&url)
+    let resp = ureq::get(&url)
         .timeout(Duration::from_secs(15))
         .set("Authorization", &auth)
         .call()
-    {
-        Ok(r) => r,
-        Err(_) => return Vec::new(),
-    };
+        .map_err(|e| match e {
+            ureq::Error::Status(code, _) => format!("OpenCode API returned HTTP {}", code),
+            other => format!("cannot reach OpenCode API: {}", other),
+        })?;
     if !(200..300).contains(&resp.status()) {
-        return Vec::new();
+        return Err(format!("OpenCode API returned HTTP {}", resp.status()));
     }
-    let text = resp.into_string().unwrap_or_default();
-    let value: serde_json::Value = match serde_json::from_str(&text) { Ok(v) => v, Err(_) => return Vec::new() };
-    let items = value.get("data").and_then(|d| d.as_array()).cloned().unwrap_or_default();
-    items.iter().filter_map(|m| {
+    let text = resp.into_string().map_err(|e| format!("cannot read API response: {}", e))?;
+    let value: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|_| "OpenCode API returned malformed JSON".to_string())?;
+    let items = value.get("data").and_then(|d| d.as_array()).cloned()
+        .ok_or_else(|| "OpenCode API response has no data array".to_string())?;
+    Ok(items.iter().filter_map(|m| {
         Some(ModelInfo {
             id: m.get("id")?.as_str()?.to_string(),
             provider: m.get("providerID")?.as_str()?.to_string(),
             name: m.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string(),
         })
-    }).collect()
+    }).collect())
 }
 
 pub fn switch_model(api: &str, password: &str, sid: &str, model_id: &str, provider: &str) -> Result<(), String> {
@@ -316,25 +322,34 @@ pub struct SessionInfo {
 }
 
 pub fn fetch_sessions(api: &str, password: &str) -> Vec<SessionInfo> {
+    fetch_sessions_result(api, password).unwrap_or_default()
+}
+
+pub fn fetch_sessions_result(api: &str, password: &str) -> Result<Vec<SessionInfo>, String> {
     let auth = format!("Basic {}", b64(format!("opencode:{}", password).as_bytes()));
     let url = format!("{}/api/session", api.trim_end_matches('/'));
-    let resp = match ureq::get(&url)
+    let resp = ureq::get(&url)
         .timeout(Duration::from_secs(15))
         .set("Authorization", &auth)
         .call()
-    {
-        Ok(r) => r,
-        Err(_) => return Vec::new(),
-    };
-    let text = resp.into_string().unwrap_or_default();
-    let value: serde_json::Value = match serde_json::from_str(&text) { Ok(v) => v, Err(_) => return Vec::new() };
-    let items = value.get("data").and_then(|d| d.as_array()).cloned().unwrap_or_default();
-    items.iter().filter_map(|s| {
+        .map_err(|e| match e {
+            ureq::Error::Status(code, _) => format!("OpenCode API returned HTTP {}", code),
+            other => format!("cannot reach OpenCode API: {}", other),
+        })?;
+    if !(200..300).contains(&resp.status()) {
+        return Err(format!("OpenCode API returned HTTP {}", resp.status()));
+    }
+    let text = resp.into_string().map_err(|e| format!("cannot read API response: {}", e))?;
+    let value: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|_| "OpenCode API returned malformed JSON".to_string())?;
+    let items = value.get("data").and_then(|d| d.as_array()).cloned()
+        .ok_or_else(|| "OpenCode API response has no data array".to_string())?;
+    Ok(items.iter().filter_map(|s| {
         Some(SessionInfo {
             id: s.get("id")?.as_str()?.to_string(),
             title: s.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string(),
         })
-    }).collect()
+    }).collect())
 }
 
 fn api_json_array_nonempty(api: &str, password: &str, path: &str) -> bool {

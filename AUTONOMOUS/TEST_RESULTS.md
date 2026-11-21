@@ -72,3 +72,5 @@ Save-failure surfacing: State::save() now logs the first failure once per proces
 CLI exit consistency: --kick on an unknown session now exits 1 (was 0); --set-model validates the watch list before calling the API and exits 1. Added cli_exit_tests.rs (spawns binary with isolated paths) covering both; 31 binaries green.
 
 OSS readiness: 31 test binaries green; GitHub Actions CI passed on first public push. Secrets scan clean. Portable defaults verified live: app runs with ~/.config/session-keeper/env overrides and shows local wall-clock time.
+
+API error surfacing: added fetch_models_result/fetch_sessions_result (ureq::Error::Status mapped to HTTP message); GUI Discover/model picker now show real cause instead of "No sessions returned". CLI --sessions/--models exit 1 with the cause. Verified dead-API CLI (exit 1) and AT-SPI GUI label. 31 binaries green.

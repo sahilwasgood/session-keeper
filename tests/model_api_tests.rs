@@ -131,3 +131,22 @@ fn fetch_sessions_parses_id_and_title() {
     assert_eq!(items[0].id, "ses_abc");
     assert_eq!(items[0].title, "tg");
 }
+
+#[test]
+fn result_api_distinguishes_empty_list_from_server_error() {
+    let (api, _rx) = mock("200 OK", r#"{"data":[]}"#);
+    assert!(session_keeper_rust::nudge::fetch_models_result(&api, "pw").unwrap().is_empty());
+    let (api2, _rx2) = mock("500 Internal Server Error", "{}");
+    let err = session_keeper_rust::nudge::fetch_models_result(&api2, "pw").unwrap_err();
+    assert!(err.contains("HTTP 500"), "unexpected error: {}", err);
+    let (api3, _rx3) = mock("200 OK", r#"{"data":[{"id":"s1","title":"Demo"}]}"#);
+    let sessions = session_keeper_rust::nudge::fetch_sessions_result(&api3, "pw").unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].title, "Demo");
+}
+
+#[test]
+fn result_api_reports_unreachable_host() {
+    let err = session_keeper_rust::nudge::fetch_sessions_result("http://127.0.0.1:1", "pw").unwrap_err();
+    assert!(err.contains("cannot reach OpenCode API"), "unexpected error: {}", err);
+}
