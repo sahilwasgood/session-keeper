@@ -817,7 +817,7 @@ fn main() {
             let mut st = State::load();
             let parsed = match key.as_str() {
                 "min_gap" | "cap" | "global_cap" | "interval" | "cooldown" => value.parse::<i64>().ok(),
-                "away" | "enabled" => match value.as_str() {
+                "away" | "enabled" | "dry_run" | "notify" => match value.as_str() {
                     "1" | "true" | "on" => Some(1),
                     "0" | "false" | "off" => Some(0),
                     _ => None,
@@ -839,6 +839,8 @@ fn main() {
                 "cooldown" => st.alert_cooldown_s = number,
                 "away" => st.away_mode = number != 0,
                 "enabled" => st.enabled = number != 0,
+                "dry_run" => st.persist_dry_run = number != 0,
+                "notify" => st.persist_notifications = number != 0,
                 _ => unreachable!(),
             }
             let text = serde_json::to_string(&st).unwrap_or_default();
@@ -1674,7 +1676,17 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
             states_differ(&mem, &disk)
         };
         if changed {
-            *st_watch.borrow_mut() = disk;
+            *st_watch.borrow_mut() = disk.clone();
+            // A settings change made by CLI or another process must reach the
+            // watchdog workers, not just the GUI's in-memory state.
+            std::env::set_var(
+                "SESSION_KEEPER_DRY_RUN",
+                if disk.persist_dry_run { "1" } else { "0" },
+            );
+            std::env::set_var(
+                "SESSION_KEEPER_NOTIFY",
+                if disk.persist_notifications { "1" } else { "0" },
+            );
             refresh(&st_watch, &list_watch, &views_watch, &filter_watch, &attention_watch);
             summary_watch.set_label("State reloaded from disk");
             log_line("state reloaded from disk (external edit)");

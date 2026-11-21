@@ -39,3 +39,6 @@ Final: 28 binaries green after Kick confirmation and preflight; GUI restarted pi
 CLI --sessions verified against live OpenCode API; session id/title parsing covered by tests.
 
 Failure alert field integrated: 28 binaries green; GUI restarted with final binary.
+
+AT-SPI GUI verification: Check now added log lines; Details dialog opened and closed; Kick confirmation dialog opened; Save settings did not crash; dry-run Kick sent 0 nudges (119 -> 119). External dry-run toggle via CLI also propagated to running GUI within 5s.
+Note: an earlier dry-run test before the env-propagation fix sent 2 real nudges to watched sessions; fixed and retested safely.

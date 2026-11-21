@@ -3,4 +3,4 @@
 Current product: /home/mint/session-keeper-rust. Release binary installed at ~/.local/bin/session-keeper-rust.
 Verified: cargo test 28 binaries / 160+ tests green; GUI running, screenshot /tmp/sk-final-ui4.png shows readable contrast and compact cards.
 Key recent integrations: rusqlite 0.41.1 security fix, GTK contrast fixes, import validation, dry-run env safety, query ORDER BY seq, release strip/size, ten-loop QA tests, all AUTONOMOUS records.
-GitHub: private repo sahilwasgood/session-keeper-rust, main branch pushed. Away-mode decision recorded. New: CLI settings parity and session discovery (--sessions, GUI Discover). Next priorities: GUI interaction harness (Xvfb unavailable), credential mode limitation on fuseblk.
+GitHub: private repo sahilwasgood/session-keeper-rust, main branch pushed. Away-mode decision recorded. New: CLI settings parity and session discovery (--sessions, GUI Discover). Next priorities: credential mode limitation on fuseblk; optional event-driven detection via /api/event SSE. AT-SPI GUI harness now available.
