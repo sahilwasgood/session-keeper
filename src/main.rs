@@ -792,6 +792,43 @@ fn main() {
             }
             return;
         }
+        Mode::SetSetting(key, value) => {
+            let mut st = State::load();
+            let parsed = match key.as_str() {
+                "min_gap" | "cap" | "global_cap" | "interval" | "cooldown" => value.parse::<i64>().ok(),
+                "away" | "enabled" => match value.as_str() {
+                    "1" | "true" | "on" => Some(1),
+                    "0" | "false" | "off" => Some(0),
+                    _ => None,
+                },
+                _ => None,
+            };
+            let number = match parsed {
+                Some(n) => n,
+                None => {
+                    eprintln!("Unknown setting or invalid value: {} = {}", key, value);
+                    std::process::exit(1);
+                }
+            };
+            match key.as_str() {
+                "min_gap" => st.min_gap = number,
+                "cap" => st.max_nudges_per_hour = number,
+                "global_cap" => st.global_nudge_cap = number,
+                "interval" => st.tick_interval_s = number,
+                "cooldown" => st.alert_cooldown_s = number,
+                "away" => st.away_mode = number != 0,
+                "enabled" => st.enabled = number != 0,
+                _ => unreachable!(),
+            }
+            let text = serde_json::to_string(&st).unwrap_or_default();
+            let clean = State::from_json(&text).unwrap_or(st);
+            if let Err(e) = clean.save() {
+                eprintln!("Setting save failed: {}", e);
+                std::process::exit(1);
+            }
+            print_line(&format!("{} = {}", key, value));
+            return;
+        }
         Mode::ImportState(path) => {
             let text = match std::fs::read_to_string(&path) {
                 Ok(t) => t,

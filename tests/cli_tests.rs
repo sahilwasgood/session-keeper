@@ -129,3 +129,11 @@ fn kick_does_not_consume_a_flag_as_session_id() {
     let o = parse_args(&args(&["session-keeper-rust", "--kick", "--dry-run"]));
     assert_eq!(o.mode, Mode::Help);
 }
+
+#[test]
+fn set_setting_mode_parses_key_value() {
+    let o = parse_args(&args(&[
+        "session-keeper-rust", "--set-setting", "min_gap", "25",
+    ]));
+    assert_eq!(o.mode, Mode::SetSetting("min_gap".to_string(), "25".to_string()));
+}

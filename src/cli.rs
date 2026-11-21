@@ -15,6 +15,7 @@ pub enum Mode {
     Version,
     ExportState(String),
     ImportState(String),
+    SetSetting(String, String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -41,6 +42,15 @@ pub fn parse_args(args: &[String]) -> Options {
             "--check-now" => mode = Mode::CheckNow,
             "--status" => mode = Mode::Status,
             "--export-audit" => mode = Mode::ExportAudit,
+            "--set-setting" => {
+                if i + 2 < args.len() && !args[i + 1].starts_with('-') {
+                    mode = Mode::SetSetting(args[i + 1].clone(), args[i + 2].clone());
+                    i += 2;
+                } else {
+                    mode = Mode::Help;
+                    break;
+                }
+            }
             "--watch" => mode = Mode::Watch,
             "--version" => mode = Mode::Version,
             "--export-state" | "--import-state" => {
