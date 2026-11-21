@@ -25,6 +25,11 @@ fn open_db() -> Option<Connection> {
         return None;
     }
     Connection::open_with_flags(Config::db_path(), OpenFlags::SQLITE_OPEN_READ_ONLY).ok()
+        .and_then(|c| {
+            // Keep a locked DB from stalling the GTK main loop for the default 5s.
+            c.busy_timeout(std::time::Duration::from_millis(1200)).ok()?;
+            Some(c)
+        })
 }
 
 fn tick(state: &Rc<RefCell<State>>) -> String {
