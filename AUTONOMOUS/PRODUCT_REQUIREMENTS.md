@@ -261,7 +261,7 @@ IDs are stable references for other sessions to pick up. Owner is a *suggestion*
 | R-005 | Make manual Kick an explicit override: confirmation in GUI, and document that it bypasses all gates (or route it through gates) | P0 | S8 + S6 | `main.rs:514-544,844-883` |
 | R-006 | CLI settings parity (flags for caps/gap/interval/away/cooldown/off) or document state.json editing | P0 | S6 | `main.rs:1082-1178` |
 | R-007 | First-run preflight + graceful no-display error; document GTK3 and notify-send prerequisites | P1 | S5/S10 | `main.rs:915`; `nudge.rs:53`; `config.rs:3-6` |
-| R-008 | Check `notify-send` availability and log/fallback when alerts cannot be delivered | P1 | S6 | `nudge.rs:51-61` |
+| R-008 | DONE: cached notify-send probe, one-time warning on missing transport, bool return, dedicated GUI feedback label | P1 | S6 | `nudge.rs:51-61` |
 | R-009 | Notify on state-corrupt reset and state-save failure | P1 | S7 | `state.rs:107-138` |
 | R-010 | Harden loop detection: seeded hash over last N assistant outputs, not one unseeded hash | P1 | S8/S6 | `safety.rs:4-8`; `main.rs:167-179` |
 | R-011 | Persist nudge counters in state (or protect history) so caps survive history rotation/deletion | P1 | S7 | `nudge.rs:28-49` |

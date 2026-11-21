@@ -60,3 +60,5 @@ Toolbar pause verified via AT-SPI: Pause all -> enabled=false, label "Resume all
 Toolbar pause label drift fixed: the Settings bulk button shadowed the toolbar toggle variable, so label updates hit the wrong widget. Renamed toolbar toggle to pause_toggle; external CLI pause now flips toolbar to "Resume all" (verified via AT-SPI and screenshot) and back.
 
 Worker error handling (R-012): launch_tick wraps run_tick in catch_unwind; a panic now sends an error outcome, the GUI surfaces it in the summary and resets busy so Check now stays usable. Disconnected channel also resets busy and logs. Normal Check now verified via AT-SPI (summary timestamp advanced); all 29 binaries green.
+
+R-008: notify() now checks notify-send availability once (cached), logs a single warning when the transport is missing, and returns bool. GUI Test notification shows a dedicated persistent label ("Test notification sent" verified via AT-SPI); previously feedback was overwritten by the next tick on the shared summary label. Added cached-availability test; 29 binaries green.

@@ -58,3 +58,12 @@ fn due_session_is_nudged() {
     let st = State::default();
     assert_eq!(decide(&st, &sess(), &Status::Due, 100_000), Decision::Nudge);
 }
+
+#[test]
+fn notify_send_availability_is_cached_and_notify_does_not_panic() {
+    let a = session_keeper_rust::nudge::notify_send_available();
+    let b = session_keeper_rust::nudge::notify_send_available();
+    assert_eq!(a, b, "availability check must be stable within a process");
+    // Dispatch is best-effort: must never panic whether or not the transport exists.
+    let _ = session_keeper_rust::nudge::notify("Session Keeper", "test");
+}

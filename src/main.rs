@@ -1306,8 +1306,22 @@ fn main() {
     settings_box.add(&notify_cb);
 
     let test_notify = icon_button("Test notification", "dialog-information-symbolic");
-    test_notify.connect_clicked(|_| notify("Session Keeper", "Test notification from Session Keeper"));
+    let notify_result = gtk::Label::new(Some(""));
+    notify_result.style_context().add_class("note");
+    notify_result.set_xalign(0.0);
+    let notify_result_btn = notify_result.clone();
+    test_notify.connect_clicked(move |_| {
+        let sent = notify("Session Keeper", "Test notification from Session Keeper");
+        notify_result_btn.set_label(if sent {
+            "Test notification sent"
+        } else if !Config::notifications() {
+            "Notifications disabled in settings"
+        } else {
+            "Notification failed: notify-send unavailable (see log)"
+        });
+    });
     settings_box.add(&test_notify);
+    settings_box.add(&notify_result);
 
     let save_settings = icon_button("Save settings", "document-save-symbolic");
     save_settings.style_context().add_class("suggested-action");

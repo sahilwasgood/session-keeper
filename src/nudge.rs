@@ -70,16 +70,51 @@ pub fn nudges_in_last_hour_all(now_ms: i64) -> i64 {
         .count() as i64
 }
 
-pub fn notify(title: &str, message: &str) {
-    if !Config::notifications() { return; }
-    if let Ok(child) = std::process::Command::new("notify-send")
+static NOTIFY_OK: OnceLock<bool> = OnceLock::new();
+static NOTIFY_WARNED: OnceLock<()> = OnceLock::new();
+
+/// Whether the desktop notification transport exists. Cached once per process
+/// so a missing notify-send is reported instead of silently dropping alerts.
+pub fn notify_send_available() -> bool {
+    *NOTIFY_OK.get_or_init(|| {
+        std::process::Command::new("notify-send")
+            .arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    })
+}
+
+fn warn_missing_transport() {
+    if NOTIFY_WARNED.set(()).is_ok() {
+        log_line("Notifications unavailable: notify-send not found, desktop alerts disabled");
+    }
+}
+
+/// Returns true when a notification was actually dispatched.
+pub fn notify(title: &str, message: &str) -> bool {
+    if !Config::notifications() { return false; }
+    if !notify_send_available() {
+        warn_missing_transport();
+        return false;
+    }
+    match std::process::Command::new("notify-send")
         .arg("--")
         .arg(title)
         .arg(message)
         .spawn()
     {
-        // Reap the helper so repeated alerts do not leave zombies.
-        std::thread::spawn(move || { let mut child = child; let _ = child.wait(); });
+        Ok(child) => {
+            // Reap the helper so repeated alerts do not leave zombies.
+            std::thread::spawn(move || { let mut child = child; let _ = child.wait(); });
+            true
+        }
+        Err(_) => {
+            warn_missing_transport();
+            false
+        }
     }
 }
 
