@@ -269,3 +269,31 @@ pub fn switch_model(api: &str, password: &str, sid: &str, model_id: &str, provid
         .map_err(|e| e.to_string())?;
     if (200..300).contains(&resp.status()) { Ok(()) } else { Err(format!("HTTP {}", resp.status())) }
 }
+
+#[derive(Debug, Clone)]
+pub struct SessionInfo {
+    pub id: String,
+    pub title: String,
+}
+
+pub fn fetch_sessions(api: &str, password: &str) -> Vec<SessionInfo> {
+    let auth = format!("Basic {}", b64(format!("opencode:{}", password).as_bytes()));
+    let url = format!("{}/api/session", api.trim_end_matches('/'));
+    let resp = match ureq::get(&url)
+        .timeout(Duration::from_secs(15))
+        .set("Authorization", &auth)
+        .call()
+    {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+    let text = resp.into_string().unwrap_or_default();
+    let value: serde_json::Value = match serde_json::from_str(&text) { Ok(v) => v, Err(_) => return Vec::new() };
+    let items = value.get("data").and_then(|d| d.as_array()).cloned().unwrap_or_default();
+    items.iter().filter_map(|s| {
+        Some(SessionInfo {
+            id: s.get("id")?.as_str()?.to_string(),
+            title: s.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string(),
+        })
+    }).collect()
+}

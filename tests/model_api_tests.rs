@@ -121,3 +121,13 @@ fn session_id_is_encoded_in_url() {
     let url = session_keeper_rust::nudge::prompt_url("http://localhost:49374", "ses_a/b?c");
     assert_eq!(url, "http://localhost:49374/api/session/ses_a%2Fb%3Fc/prompt");
 }
+
+#[test]
+fn fetch_sessions_parses_id_and_title() {
+    let body = r#"{"data":[{"id":"ses_abc","title":"tg"}]}"#;
+    let (api, _rx) = mock("200 OK", body);
+    let items = session_keeper_rust::nudge::fetch_sessions(&api, "pw");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].id, "ses_abc");
+    assert_eq!(items[0].title, "tg");
+}

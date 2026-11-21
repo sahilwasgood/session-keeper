@@ -4,7 +4,7 @@ use rusqlite::{Connection, OpenFlags};
 use session_keeper_rust::cli::{parse_args, Mode, HELP};
 use session_keeper_rust::config::Config;
 use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_exists, session_model, session_title, Status};
-use session_keeper_rust::nudge::{append_history, decide, fetch_models, log_line, notify, nudges_in_last_hour_all, send_nudge, switch_model, Decision, ModelInfo};
+use session_keeper_rust::nudge::{append_history, decide, fetch_models, fetch_sessions, log_line, notify, nudges_in_last_hour_all, send_nudge, switch_model, Decision, ModelInfo, SessionInfo};
 use session_keeper_rust::process::create_lock;
 use session_keeper_rust::state::{apply_tick_fields, states_differ, GlobalTickFields, Session, State, TickFields};
 use session_keeper_rust::safety::{fingerprint, should_nudge_after_debounce};
@@ -19,6 +19,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 static MODEL_TX: OnceLock<Sender<(String, Vec<ModelInfo>)>> = OnceLock::new();
 static KICK_TX: OnceLock<Sender<(String, Result<(), String>)>> = OnceLock::new();
+static SESSION_TX: OnceLock<Sender<Vec<SessionInfo>>> = OnceLock::new();
 
 #[derive(Clone)]
 struct SessionView {
@@ -1016,6 +1017,8 @@ fn main() {
     let _ = MODEL_TX.set(model_tx.clone());
     let (switch_tx, switch_rx) = channel::<(String, Result<(), String>)>();
     let (kick_tx, kick_rx) = channel::<(String, Result<(), String>)>();
+    let (session_tx, session_rx) = channel::<Vec<SessionInfo>>();
+    let _ = SESSION_TX.set(session_tx.clone());
     let _ = KICK_TX.set(kick_tx.clone());
     let model_cache: Rc<RefCell<HashMap<String, Vec<ModelInfo>>>> = Rc::new(RefCell::new(HashMap::new()));
 
@@ -1118,6 +1121,18 @@ fn main() {
         }
     }));
     controls.add(&add);
+
+    let discover = icon_button("Discover", "system-search-symbolic");
+    discover.connect_clicked(|_| {
+        let tx = match SESSION_TX.get() { Some(t) => t.clone(), None => return };
+        let api = Config::api_base();
+        let pw = Config::password();
+        std::thread::spawn(move || {
+            let sessions = fetch_sessions(&api, &pw);
+            let _ = tx.send(sessions);
+        });
+    });
+    controls.add(&discover);
 
     let check = icon_button("Check now", "view-refresh-symbolic");
     check.style_context().add_class("suggested-action");
@@ -1492,6 +1507,71 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
                 match result {
                     Ok(()) => summary_switch.set_label(&format!("Model switched for {}", short_id(&sid))),
                     Err(e) => summary_switch.set_label(&format!("Model switch failed: {}", e)),
+                }
+            }
+        }
+        glib::ControlFlow::Continue
+    });
+
+    let session_rx_cell = Rc::new(RefCell::new(Some(session_rx)));
+    let st_discover = state.clone();
+    let list_discover = list.clone();
+    let views_discover = views.clone();
+    let filter_discover = filter.clone();
+    let attention_discover = attention.clone();
+    let summary_discover = summary.clone();
+    glib::timeout_add_local(Duration::from_millis(200), move || {
+        if let Some(r) = session_rx_cell.borrow_mut().as_mut() {
+            if let Ok(found) = r.try_recv() {
+                if found.is_empty() {
+                    summary_discover.set_label("No sessions returned by OpenCode");
+                } else {
+                    let dialog = gtk::Dialog::with_buttons(
+                        Some("Add a session"),
+                        None::<&gtk::Window>,
+                        gtk::DialogFlags::MODAL,
+                        &[("Cancel", gtk::ResponseType::Cancel), ("Add", gtk::ResponseType::Ok)],
+                    );
+                    let combo = gtk::ComboBoxText::new();
+                    for s in &found {
+                        let label = if s.title.is_empty() { s.id.clone() } else { format!("{} - {}", s.title, s.id) };
+                        combo.append(Some(&s.id), &label);
+                    }
+                    combo.set_active(Some(0));
+                    dialog.content_area().add(&combo);
+                    dialog.show_all();
+                    let st = st_discover.clone();
+                    let list = list_discover.clone();
+                    let views = views_discover.clone();
+                    let filter = filter_discover.clone();
+                    let attention = attention_discover.clone();
+                    let summary = summary_discover.clone();
+                    dialog.connect_response(move |dlg, resp| {
+                        if resp == gtk::ResponseType::Ok {
+                            if let Some(id) = combo.active_id() {
+                                let sid = id.to_string();
+                                if session_keeper_rust::state::is_valid_session_id(&sid)
+                                    && !st.borrow().sessions.iter().any(|s| s.id == sid)
+                                {
+                                    st.borrow_mut().sessions.push(Session {
+                                        id: sid.clone(),
+                                        enabled: true,
+                                        prompt: None,
+                                        handled: 0,
+                                        prompted: 0,
+                                        last_nudge: 0,
+                                        nudges: 0,
+                                        last_action: "discovered".to_string(),
+                                        ..Default::default()
+                                    });
+                                    let _ = st.borrow().save();
+                                    summary.set_label(&format!("Added {}", session_keeper_rust::ui::short_id(&sid)));
+                                    refresh(&st, &list, &views, &filter, &attention);
+                                }
+                            }
+                        }
+                        dlg.close();
+                    });
                 }
             }
         }
