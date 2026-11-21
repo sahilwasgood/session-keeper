@@ -138,12 +138,14 @@ Options:
   (none)                            Open the window and run the watchdog while it is open
   --check-now                       Run one watchdog tick in the terminal and exit
   --status                          Print session statuses and exit
+  --sessions                        List live OpenCode sessions
   --kick <session-id>               Send the nudge prompt to one session now
   --models [filter]                 List available models, optionally filtered
   --set-model <sid> <id> <provider> Switch one session's model
   --pause <sid>                     Pause one session
   --resume <sid>                    Resume one session
   --set-prompt <sid> <text>         Set that session's nudge prompt
+  --set-setting <key> <value>       Change min_gap, cap, global_cap, interval, cooldown, away, enabled, dry_run, notify
   --watch                           Print status every tick in the terminal
   --version                         Show version
   --export-state <path>             Copy state.json to a backup path

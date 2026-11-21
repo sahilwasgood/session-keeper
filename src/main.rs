@@ -100,12 +100,7 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
     for s in &sessions {
         let (status, decision) = {
             let st = state.borrow();
-            let mut status = classify(&conn, &s.id, &st);
-            if status != Status::Clean
-                && has_pending_human_input(&Config::api_base(), &Config::password(), &s.id)
-            {
-                status = Status::Waiting;
-            }
+            let status = classify(&conn, &s.id, &st);
             let decision = decide(&st, s, &status, now);
             (status, decision)
         };
@@ -211,6 +206,12 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
 
         if Config::dry_run() {
             log_line(&format!("{}: would nudge (dry run)", s.id));
+            held += 1;
+            continue;
+        }
+
+        if has_pending_human_input(&Config::api_base(), &Config::password(), &s.id) {
+            log_line(&format!("{}: hold pending_human_input", s.id));
             held += 1;
             continue;
         }

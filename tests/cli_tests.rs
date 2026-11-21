@@ -142,3 +142,10 @@ fn set_setting_mode_parses_key_value() {
 fn sessions_mode() {
     assert_eq!(parse_args(&args(&["session-keeper-rust", "--sessions"])).mode, Mode::Sessions);
 }
+
+#[test]
+fn help_lists_all_implemented_flags() {
+    let help = session_keeper_rust::cli::HELP;
+    assert!(help.contains("--set-setting"));
+    assert!(help.contains("--sessions"));
+}
