@@ -9,6 +9,7 @@ fn default_min_gap() -> i64 { 10 }
 fn default_max_nudges() -> i64 { 30 }
 fn default_global_cap() -> i64 { 60 }
 fn default_interval() -> i64 { 30 }
+fn default_true() -> bool { true }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
@@ -57,6 +58,10 @@ pub struct State {
     pub last_tick_ms: i64,
     #[serde(default = "default_interval")]
     pub tick_interval_s: i64,
+    #[serde(default)]
+    pub persist_dry_run: bool,
+    #[serde(default = "default_true")]
+    pub persist_notifications: bool,
 }
 
 impl Default for State {
@@ -71,6 +76,8 @@ impl Default for State {
             sessions: Vec::new(),
             last_tick_ms: 0,
             tick_interval_s: 30,
+            persist_dry_run: false,
+            persist_notifications: true,
         }
     }
 }

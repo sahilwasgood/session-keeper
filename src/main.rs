@@ -18,6 +18,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 static MODEL_TX: OnceLock<Sender<(String, Vec<ModelInfo>)>> = OnceLock::new();
+static KICK_TX: OnceLock<Sender<(String, Result<(), String>)>> = OnceLock::new();
 
 #[derive(Clone)]
 struct SessionView {
@@ -404,6 +405,31 @@ fn refresh(
         });
         actions.add(&model_btn);
 
+        let kick = icon_button("Kick", "mail-send-symbolic");
+        let sid_kick = s.id.clone();
+        let prompt_kick = s.prompt.clone().unwrap_or_default();
+        let default_kick = default_prompt.clone();
+        kick.connect_clicked(move |_| {
+            let tx = match KICK_TX.get() { Some(t) => t.clone(), None => return };
+            let sid = sid_kick.clone();
+            let prompt = if prompt_kick.trim().is_empty() { default_kick.clone() } else { prompt_kick.clone() };
+            let api = Config::api_base();
+            let pw = Config::password();
+            std::thread::spawn(move || {
+                let result = if Config::dry_run() {
+                    Ok(())
+                } else {
+                    send_nudge(&api, &pw, &sid, &prompt)
+                };
+                if result.is_ok() && !Config::dry_run() {
+                    append_history(&sid, "nudge", &prompt);
+                    log_line(&format!("{}: kicked from UI", sid));
+                }
+                let _ = tx.send((sid, result));
+            });
+        });
+        actions.add(&kick);
+
         let del = icon_button("Remove", "user-trash-symbolic");
         let st = state.clone();
         let list_c = list.clone();
@@ -613,6 +639,11 @@ fn main() {
     }
 
     let state = Rc::new(RefCell::new(State::load()));
+    if !opts.dry_run {
+        let st = state.borrow();
+        std::env::set_var("SESSION_KEEPER_DRY_RUN", if st.persist_dry_run { "1" } else { "0" });
+        std::env::set_var("SESSION_KEEPER_NOTIFY", if st.persist_notifications { "1" } else { "0" });
+    }
     let views: Rc<RefCell<HashMap<String, SessionView>>> = Rc::new(RefCell::new(HashMap::new()));
     let filter: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
     let attention: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
@@ -622,6 +653,8 @@ fn main() {
     let (model_tx, model_rx) = channel::<(String, Vec<ModelInfo>)>();
     let _ = MODEL_TX.set(model_tx.clone());
     let (switch_tx, switch_rx) = channel::<(String, Result<(), String>)>();
+    let (kick_tx, kick_rx) = channel::<(String, Result<(), String>)>();
+    let _ = KICK_TX.set(kick_tx.clone());
     let model_cache: Rc<RefCell<HashMap<String, Vec<ModelInfo>>>> = Rc::new(RefCell::new(HashMap::new()));
 
     let window = gtk::Window::new(gtk::WindowType::Toplevel);
@@ -817,8 +850,10 @@ fn main() {
         st.global_nudge_cap = global_cap.value() as i64;
         st.enabled = enabled_cb.is_active();
         let _ = st.save();
-        std::env::set_var("SESSION_KEEPER_DRY_RUN", if dry_cb.is_active() { "1" } else { "0" });
-        std::env::set_var("SESSION_KEEPER_NOTIFY", if notify_cb.is_active() { "1" } else { "0" });
+        st.persist_dry_run = dry_cb.is_active();
+        st.persist_notifications = notify_cb.is_active();
+        std::env::set_var("SESSION_KEEPER_DRY_RUN", if st.persist_dry_run { "1" } else { "0" });
+        std::env::set_var("SESSION_KEEPER_NOTIFY", if st.persist_notifications { "1" } else { "0" });
         arm_timer(&st_settings, &tx_settings, &busy_settings, &timer_settings);
     });
     settings_box.add(&save_settings);
@@ -943,7 +978,11 @@ fn main() {
                 Ok(outcome) => {
                     *st_ui.borrow_mut() = outcome.state;
                     *views_ui.borrow_mut() = outcome.views;
-                    summary_ui.set_label(&outcome.summary);
+                    let watched = st_ui.borrow().sessions.len();
+                    let attention = views_ui.borrow().values().filter(|v| needs_attention(&v.status)).count();
+                    let prefix = if Config::dry_run() { "DRY RUN | " } else { "" };
+                    summary_ui.set_label(&format!("{}{}  |  {} watched, {} need attention",
+                        prefix, outcome.summary, watched, attention));
                     history_ui.set_label(&tail_file(&Config::history_path(), 25));
                     log_ui.set_label(&tail_file(&Config::log_path(), 25));
                     digest_ui.set_label(&today_digest());
@@ -1016,6 +1055,21 @@ fn main() {
                 match result {
                     Ok(()) => summary_switch.set_label(&format!("Model switched for {}", short_id(&sid))),
                     Err(e) => summary_switch.set_label(&format!("Model switch failed: {}", e)),
+                }
+            }
+        }
+        glib::ControlFlow::Continue
+    });
+
+    let kick_rx_cell = Rc::new(RefCell::new(Some(kick_rx)));
+    let summary_kick = summary.clone();
+    glib::timeout_add_local(Duration::from_millis(200), move || {
+        if let Some(r) = kick_rx_cell.borrow_mut().as_mut() {
+            if let Ok((sid, result)) = r.try_recv() {
+                match result {
+                    Ok(()) if Config::dry_run() => summary_kick.set_label(&format!("Dry-run kick for {}", short_id(&sid))),
+                    Ok(()) => summary_kick.set_label(&format!("Kicked {}", short_id(&sid))),
+                    Err(e) => summary_kick.set_label(&format!("Kick failed: {}", e)),
                 }
             }
         }

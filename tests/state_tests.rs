@@ -15,6 +15,10 @@ fn missing_state_uses_defaults() {
 #[test]
 fn save_then_load_preserves_session_fields() {
     let mut s = State::default();
+    s.tick_interval_s = 15;
+    s.global_nudge_cap = 12;
+    s.persist_dry_run = true;
+    s.persist_notifications = false;
     s.sessions.push(session_keeper_rust::state::Session {
         id: "ses_test".to_string(),
         enabled: true,
@@ -32,5 +36,9 @@ fn save_then_load_preserves_session_fields() {
     assert_eq!(loaded.sessions[0].id, "ses_test");
     assert_eq!(loaded.sessions[0].prompt.as_deref(), Some("go on"));
     assert_eq!(loaded.sessions[0].nudges, 4);
+    assert_eq!(loaded.tick_interval_s, 15);
+    assert_eq!(loaded.global_nudge_cap, 12);
+    assert!(loaded.persist_dry_run);
+    assert!(!loaded.persist_notifications);
     std::fs::remove_file(path).ok();
 }
