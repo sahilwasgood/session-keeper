@@ -66,3 +66,5 @@ R-008: notify() now checks notify-send availability once (cached), logs a single
 R-009: State::load_from_path sets a process-global corrupt flag; main() logs + eprints + notifies once at startup. Verified with an isolated SESSION_KEEPER_STATE corrupt file: stderr warning, log line, timestamped backup preserved. Added assertion in state_corrupt_tests. 29 binaries green.
 
 Question guard: added db::is_question (trim trailing whitespace, recognize fullwidth ?) and used it in both classify branches; added unit + classify-with-trailing-newline tests. 29 binaries green. Fresh release reinstalled and live GUI smoke-checked (summary + Events connected).
+
+Save-failure surfacing: State::save() now logs the first failure once per process (covers all 20 ignored-Result call sites) without caller churn. New save_failure_tests.rs binary verifies exactly one log line on repeated failures; 30 binaries green; live app shows zero spurious warnings.

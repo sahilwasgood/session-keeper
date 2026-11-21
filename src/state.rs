@@ -5,6 +5,7 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 static CORRUPT_LOAD: OnceLock<()> = OnceLock::new();
+static SAVE_FAILED: OnceLock<()> = OnceLock::new();
 
 /// True when a corrupt state file was backed up and reset this process.
 pub fn state_was_corrupt() -> bool {
@@ -196,7 +197,16 @@ impl State {
         s
     }
 
-    pub fn save(&self) -> io::Result<()> { self.save_to_path(&Config::state_path()) }
+    pub fn save(&self) -> io::Result<()> {
+        self.save_to_path(&Config::state_path()).map_err(|e| {
+            // Callers ignore the Result; surface the first failure once so a
+            // read-only or full disk cannot silently lose settings and the watch list.
+            if SAVE_FAILED.set(()).is_ok() {
+                crate::nudge::log_line(&format!("State save failed: {} (later failures this process are not logged)", e));
+            }
+            e
+        })
+    }
 
     pub fn save_to_path(&self, path: &Path) -> io::Result<()> {
         if let Some(parent) = path.parent() {
