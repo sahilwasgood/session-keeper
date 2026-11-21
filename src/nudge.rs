@@ -1,4 +1,5 @@
 use std::time::Duration;
+use std::sync::{Mutex, OnceLock};
 use crate::config::Config;
 use crate::db::Status;
 use crate::state::{Session, State};
@@ -23,6 +24,27 @@ fn b64(input: &[u8]) -> String {
         out.push(if chunk.len() > 2 { T[(n & 63) as usize] as char } else { '=' });
     }
     out
+}
+
+// Rotation is a read-modify-write; serialise it so concurrent tick/kick/UI
+// writers cannot drop each other's appended lines.
+static IO_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn append_and_rotate(path: &std::path::Path, line: &str) {
+    let _guard = IO_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(f, "{}", line);
+    }
+    if let Ok(text) = std::fs::read_to_string(path) {
+        let rotated = rotate_text(&text, 2000, 1000);
+        if rotated != text {
+            let _ = std::fs::write(path, rotated);
+        }
+    }
 }
 
 pub fn nudges_in_last_hour(sid: &str, now_ms: i64) -> i64 {
@@ -51,6 +73,7 @@ pub fn nudges_in_last_hour_all(now_ms: i64) -> i64 {
 pub fn notify(title: &str, message: &str) {
     if !Config::notifications() { return; }
     if let Ok(child) = std::process::Command::new("notify-send")
+        .arg("--")
         .arg(title)
         .arg(message)
         .spawn()
@@ -98,6 +121,17 @@ pub fn send_nudge(api: &str, password: &str, sid: &str, text: &str) -> Result<()
     send_nudge_with_retry(api, password, sid, text, std::time::Duration::from_secs(10), 2)
 }
 
+fn is_retryable_error(err: &str) -> bool {
+    // ureq Error::Status displays "status code 503"; the fallback status path
+    // in send_nudge_with_timeout returns "HTTP 503". Cover both, plus transport/timeout.
+    err.contains("status code 5")
+        || err.contains("status code 429")
+        || err.starts_with("HTTP 5")
+        || err.starts_with("HTTP 429")
+        || err.contains("Network Error")
+        || err.contains("timed out")
+}
+
 pub fn send_nudge_with_retry(
     api: &str,
     password: &str,
@@ -112,10 +146,7 @@ pub fn send_nudge_with_retry(
             Ok(()) => return Ok(()),
             Err(e) => {
                 last = e;
-                let retryable = last.contains("status code 5")
-                    || last.contains("status code 429")
-                    || last.contains("Network Error")
-                    || last.contains("timed out");
+                let retryable = is_retryable_error(&last);
                 if !retryable || i + 1 >= attempts { break; }
                 let nanos = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -153,26 +184,13 @@ pub fn send_nudge_with_timeout(
 }
 
 pub fn append_history(sid: &str, kind: &str, detail: &str) {
-    let path = Config::history_path();
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
     let detail: String = detail.chars().take(200).collect();
     let line = serde_json::json!({ "t": now, "sid": sid, "kind": kind, "detail": detail });
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
-        let _ = writeln!(f, "{}", line);
-    }
-    if let Ok(text) = std::fs::read_to_string(&path) {
-        let rotated = rotate_text(&text, 2000, 1000);
-        if rotated != text {
-            let _ = std::fs::write(&path, rotated);
-        }
-    }
+    append_and_rotate(&Config::history_path(), &line.to_string());
 }
 
 pub fn rotate_text(text: &str, max: usize, keep: usize) -> String {
@@ -180,28 +198,17 @@ pub fn rotate_text(text: &str, max: usize, keep: usize) -> String {
     if all.len() <= max {
         return text.to_string();
     }
-    all[all.len() - keep..].join("\n") + "\n"
+    let start = all.len().saturating_sub(keep.min(all.len()));
+    all[start..].join("\n") + "\n"
 }
 
 pub fn log_line(message: &str) {
-    use std::io::Write;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(Config::log_path())
-    {
-        let _ = writeln!(f, "{} {}", crate::config::format_log_time(now), message);
-    }
-    if let Ok(text) = std::fs::read_to_string(Config::log_path()) {
-        let rotated = rotate_text(&text, 2000, 1000);
-        if rotated != text {
-            let _ = std::fs::write(Config::log_path(), rotated);
-        }
-    }
+    let line = format!("{} {}", crate::config::format_log_time(now), message);
+    append_and_rotate(&Config::log_path(), &line);
 }
 
 
@@ -223,6 +230,9 @@ pub fn fetch_models(api: &str, password: &str) -> Vec<ModelInfo> {
         Ok(r) => r,
         Err(_) => return Vec::new(),
     };
+    if !(200..300).contains(&resp.status()) {
+        return Vec::new();
+    }
     let text = resp.into_string().unwrap_or_default();
     let value: serde_json::Value = match serde_json::from_str(&text) { Ok(v) => v, Err(_) => return Vec::new() };
     let items = value.get("data").and_then(|d| d.as_array()).cloned().unwrap_or_default();

@@ -25,6 +25,11 @@ pub struct Options {
     pub explicit_dry: bool,
 }
 
+// Session ids and paths must be real values, not empty or another flag.
+fn valid_value(s: &str) -> bool {
+    !s.is_empty() && !s.starts_with('-')
+}
+
 pub fn parse_args(args: &[String]) -> Options {
     let mut mode = Mode::Gui;
     let mut dry_run = false;
@@ -40,7 +45,7 @@ pub fn parse_args(args: &[String]) -> Options {
             "--version" => mode = Mode::Version,
             "--export-state" | "--import-state" => {
                 let flag = args[i].clone();
-                if i + 1 < args.len() && !args[i + 1].starts_with('-') {
+                if i + 1 < args.len() && valid_value(&args[i + 1]) {
                     mode = if flag == "--export-state" {
                         Mode::ExportState(args[i + 1].clone())
                     } else {
@@ -75,7 +80,7 @@ pub fn parse_args(args: &[String]) -> Options {
                 break;
             }
             "--kick" => {
-                if i + 1 < args.len() && !args[i + 1].starts_with('-') {
+                if i + 1 < args.len() && valid_value(&args[i + 1]) {
                     mode = Mode::Kick(args[i + 1].clone());
                     i += 1;
                 } else {
@@ -92,7 +97,7 @@ pub fn parse_args(args: &[String]) -> Options {
                 }
             }
             "--set-model" => {
-                if i + 3 < args.len() {
+                if i + 3 < args.len() && valid_value(&args[i + 1]) {
                     mode = Mode::SetModel(
                         args[i + 1].clone(),
                         args[i + 2].clone(),
@@ -114,13 +119,25 @@ pub fn parse_args(args: &[String]) -> Options {
     Options { mode, dry_run, json, explicit_dry }
 }
 
-pub const HELP: &str = "Session Keeper\nUsage: session-keeper-rust [options]\n\nOptions:\n  (none)                       Open the window and run the watchdog while it is open\n  --check-now                  Run one watchdog tick in the terminal and exit\n  --status                     Print session statuses and exit\n  --kick <session-id>          Send the nudge prompt to one session now\n  --models [filter]            List available models, optionally filtered\n  --set-model <sid> <id> <provider>   Switch one session's model\n  --pause <sid>                Pause one session
-  --resume <sid>               Resume one session
-  --set-prompt <sid> <text>    Set that session's nudge prompt
-  --watch                      Print status every tick in the terminal
-  --version                    Show version
-  --export-state <path>        Copy state.json to a backup path
-  --import-state <path>        Restore state.json from a backup
-  --export-audit               Write history + log to ~/session-keeper-audit.txt
-  --json                       Machine-readable status output
-  --dry-run                    Never send real nudges\n  --help                       Show this help\n";
+pub const HELP: &str = "Session Keeper
+Usage: session-keeper-rust [options]
+
+Options:
+  (none)                            Open the window and run the watchdog while it is open
+  --check-now                       Run one watchdog tick in the terminal and exit
+  --status                          Print session statuses and exit
+  --kick <session-id>               Send the nudge prompt to one session now
+  --models [filter]                 List available models, optionally filtered
+  --set-model <sid> <id> <provider> Switch one session's model
+  --pause <sid>                     Pause one session
+  --resume <sid>                    Resume one session
+  --set-prompt <sid> <text>         Set that session's nudge prompt
+  --watch                           Print status every tick in the terminal
+  --version                         Show version
+  --export-state <path>             Copy state.json to a backup path
+  --import-state <path>             Restore state.json from a backup
+  --export-audit                    Write history + log to ~/session-keeper-audit.txt
+  --json                            Machine-readable status output
+  --dry-run                         Never send real nudges
+  --help                            Show this help
+";

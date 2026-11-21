@@ -376,7 +376,9 @@ fn refresh(
         badge.style_context().add_class("badge");
         badge.style_context().add_class(status_class(&status));
         badge.set_size_request(118, -1);
-        if let Some(v) = view { badge.set_tooltip_text(Some(&v.reason)); }
+        if let Some(v) = view {
+            badge.set_tooltip_text(Some(&session_keeper_rust::ui::status_tooltip(&v.status)));
+        }
         if view.map(|v| !v.exists).unwrap_or(false) {
             badge.set_label("missing");
             badge.style_context().add_class("badge-stalled");
@@ -564,7 +566,7 @@ fn refresh(
         list.add(&card);
     }
     if sessions.is_empty() {
-        let empty = gtk::Label::new(Some("No watched sessions. Add a session id below."));
+        let empty = gtk::Label::new(Some("No watched sessions. Add a session id in the field above."));
         empty.style_context().add_class("note");
         list.add(&empty);
     }
@@ -664,19 +666,21 @@ fn main() {
     let raw: Vec<String> = std::env::args().collect();
     let opts = parse_args(&raw);
     let boot_state = State::load();
-    if !opts.explicit_dry {
+    if std::env::var_os("SESSION_KEEPER_DRY_RUN").is_none() {
         std::env::set_var(
             "SESSION_KEEPER_DRY_RUN",
             if boot_state.persist_dry_run { "1" } else { "0" },
         );
     }
+    if std::env::var_os("SESSION_KEEPER_NOTIFY").is_none() {
+        std::env::set_var(
+            "SESSION_KEEPER_NOTIFY",
+            if boot_state.persist_notifications { "1" } else { "0" },
+        );
+    }
     if opts.dry_run {
         std::env::set_var("SESSION_KEEPER_DRY_RUN", "1");
     }
-    std::env::set_var(
-        "SESSION_KEEPER_NOTIFY",
-        if boot_state.persist_notifications { "1" } else { "0" },
-    );
     let resume_mode = matches!(&opts.mode, Mode::Resume(_));
     let lock_path = Config::lock_path();
     let lock_needed = matches!(
@@ -772,7 +776,7 @@ fn main() {
                     std::process::exit(1);
                 }
             };
-            let imported: State = match serde_json::from_str(&text) {
+            let imported: State = match State::from_json(&text) {
                 Ok(s) => s,
                 Err(e) => {
                     eprintln!("Invalid state file: {}", e);
@@ -1230,7 +1234,7 @@ fn main() {
         let path = std::path::Path::new(&home).join("session-keeper-export.json");
         match std::fs::read_to_string(&path)
             .ok()
-            .and_then(|s| serde_json::from_str::<State>(&s).ok())
+            .and_then(|s| State::from_json(&s).ok())
         {
             Some(new_state) => {
                 *st_import.borrow_mut() = new_state;

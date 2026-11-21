@@ -1,2 +1,7 @@
 target/
 .superpowers/
+.env
+*.key
+*.pem
+*.p12
+*.pfx

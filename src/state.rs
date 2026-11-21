@@ -12,8 +12,9 @@ fn default_interval() -> i64 { 30 }
 fn default_true() -> bool { true }
 fn default_cooldown() -> i64 { 300 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
+    #[serde(default)]
     pub id: String,
     #[serde(default = "default_enabled")]
     pub enabled: bool,
@@ -43,6 +44,28 @@ pub struct Session {
     pub stalled_alert_ms: i64,
     #[serde(default)]
     pub missing_alert_ms: i64,
+}
+
+impl Default for Session {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            enabled: true,
+            prompt: None,
+            handled: 0,
+            prompted: 0,
+            last_nudge: 0,
+            nudges: 0,
+            last_action: String::new(),
+            idle_streak: 0,
+            last_hash: None,
+            last_status: String::new(),
+            last_alert_ms: 0,
+            question_alert_ms: 0,
+            stalled_alert_ms: 0,
+            missing_alert_ms: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,17 +130,19 @@ impl State {
     pub fn load_from_path(path: &Path) -> State {
         let text = match std::fs::read_to_string(path) {
             Ok(t) => t,
-            Err(_) => return State::default(),
-        };
-        match serde_json::from_str::<State>(&text) {
-            Ok(mut s) => {
-                s.sessions.retain(|x| !x.id.is_empty());
-                s
+            Err(e) => {
+                if e.kind() != io::ErrorKind::NotFound {
+                    eprintln!("session-keeper: cannot read state {}: {}", path.display(), e);
+                }
+                return State::default();
             }
+        };
+        match State::from_json(&text) {
+            Ok(s) => s,
             Err(_) => {
                 let stamp = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
+                    .map(|d| d.as_nanos())
                     .unwrap_or(0);
                 let backup = std::path::PathBuf::from(format!("{}.corrupt-{}", path.display(), stamp));
                 let _ = std::fs::copy(path, backup);
@@ -126,14 +151,46 @@ impl State {
         }
     }
 
+    // Single parse + sanitize entry point shared by load and import.
+    pub fn from_json(text: &str) -> Result<State, serde_json::Error> {
+        serde_json::from_str::<State>(text).map(State::normalize)
+    }
+
+    fn normalize(mut s: State) -> State {
+        let mut seen = std::collections::HashSet::new();
+        s.sessions.retain(|x| !x.id.is_empty() && seen.insert(x.id.clone()));
+        s.min_gap = s.min_gap.clamp(0, 3600);
+        s.max_nudges_per_hour = s.max_nudges_per_hour.max(0);
+        s.global_nudge_cap = s.global_nudge_cap.max(0);
+        s.tick_interval_s = s.tick_interval_s.clamp(5, 300);
+        s.alert_cooldown_s = s.alert_cooldown_s.max(0);
+        s.last_tick_ms = s.last_tick_ms.max(0);
+        s.cap_alert_ms = s.cap_alert_ms.max(0);
+        s.missing_alert_ms = s.missing_alert_ms.max(0);
+        for x in &mut s.sessions {
+            x.handled = x.handled.max(0);
+            x.prompted = x.prompted.max(0);
+            x.last_nudge = x.last_nudge.max(0);
+            x.nudges = x.nudges.max(0);
+            x.idle_streak = x.idle_streak.max(0);
+            x.last_alert_ms = x.last_alert_ms.max(0);
+            x.question_alert_ms = x.question_alert_ms.max(0);
+            x.stalled_alert_ms = x.stalled_alert_ms.max(0);
+            x.missing_alert_ms = x.missing_alert_ms.max(0);
+        }
+        s
+    }
+
     pub fn save(&self) -> io::Result<()> { self.save_to_path(&Config::state_path()) }
 
     pub fn save_to_path(&self, path: &Path) -> io::Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let tmp = path.with_extension("tmp");
-        std::fs::write(&tmp, serde_json::to_string_pretty(self).unwrap_or_default())?;
+        let json = serde_json::to_string_pretty(self)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
+        std::fs::write(&tmp, json)?;
         std::fs::rename(&tmp, path)
     }
 }

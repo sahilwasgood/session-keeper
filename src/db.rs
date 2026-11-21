@@ -12,9 +12,10 @@ pub enum Status {
 
 fn last_event(conn: &Connection, sid: &str) -> (Option<String>, i64, String) {
     conn.query_row(
-        "SELECT type, time_created, COALESCE(json_extract(data,'$.outcome'),'')
+        "SELECT type, time_created,
+         CASE WHEN json_valid(data) THEN COALESCE(json_extract(data,'$.outcome'),'') ELSE '' END
          FROM session_message WHERE session_id=?1
-         ORDER BY time_created DESC, rowid DESC LIMIT 1",
+         ORDER BY seq DESC LIMIT 1",
         [sid],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     )
@@ -23,12 +24,13 @@ fn last_event(conn: &Connection, sid: &str) -> (Option<String>, i64, String) {
     .unwrap_or((None, 0, String::new()))
 }
 
-fn last_assistant(conn: &Connection, sid: &str) -> (i64, String) {
+// Public so callers can fetch timestamp+text in one query instead of two.
+pub fn last_assistant(conn: &Connection, sid: &str) -> (i64, String) {
     let row: Option<(i64, String)> = conn
         .query_row(
             "SELECT time_created, data FROM session_message
              WHERE session_id=?1 AND type='assistant'
-             ORDER BY time_created DESC, rowid DESC LIMIT 1",
+             ORDER BY seq DESC LIMIT 1",
             [sid],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
@@ -89,7 +91,7 @@ pub fn session_title(conn: &Connection, sid: &str) -> String {
 pub fn last_idle_ts(conn: &Connection, sid: &str) -> i64 {
     conn.query_row(
         "SELECT time_created FROM session_message WHERE session_id=?1 AND type='idle'
-         ORDER BY time_created DESC, rowid DESC LIMIT 1",
+         ORDER BY seq DESC LIMIT 1",
         [sid],
         |r| r.get(0),
     )
