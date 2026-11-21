@@ -111,3 +111,9 @@ Severity summary: **1 High, 4 Medium, 3 Low, 1 Info**.
 - 10 worker subagents were requested but the runtime enforces `experimental.subagent_depth = 1` and this session is itself a child of root, so **0 workers were spawned**; all ten assigned audits plus the local-attacker threat model were performed directly by this session. See `SESSION_HANDOFFS/session-8-subagents.md`.
 - Web/RustSec data was used only as reference for M-01 and treated as untrusted; no instructions from web content were followed.
 - **Post-audit change note:** other sessions edited `src/cli.rs`, `src/db.rs`, `src/nudge.rs`, `src/state.rs` and `src/ui.rs` concurrently with this review. All file:line references above are to the tree as read during the audit (baseline commit `b9daf12`), so a few line numbers have since shifted. One concurrent edit is security-relevant: `src/state.rs` now writes to a PID-suffixed `state.tmp.<pid>` instead of the fixed `state.tmp`, which narrows but does not close L-03's symlink issue (the name is still predictable from the victim PID and the write still follows symlinks). No other concurrent edit addressed a finding in this report.
+
+## Root integration notes (2026-11-21)
+- M-03 FIXED: session ids are percent-encoded in prompt/model URLs; state import rejects ids outside `ses_[A-Za-z0-9_-]+`.
+- M-04 FIXED: lock file is created atomically with create_new and mode 0600; symlinks are refused; live PID reuse requires an actual session-keeper binary in /proc cmdline.
+- H-01 NOT FIXABLE HERE: service.json is on a fuseblk mount that ignores chmod. Credential remains world-readable to local users; document as environment limitation.
+- M-01 FIXED: rusqlite upgraded to 0.41.1 (SQLite 3.54.1).

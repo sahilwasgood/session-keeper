@@ -115,3 +115,9 @@ fn switch_model_posts_expected_payload_and_headers() {
     assert!(request.contains("Authorization: Basic b3BlbmNvZGU6cHc="), "{}", request);
     assert!(request.to_ascii_lowercase().contains("content-type: application/json"), "{}", request);
 }
+
+#[test]
+fn session_id_is_encoded_in_url() {
+    let url = session_keeper_rust::nudge::prompt_url("http://localhost:49374", "ses_a/b?c");
+    assert_eq!(url, "http://localhost:49374/api/session/ses_a%2Fb%3Fc/prompt");
+}

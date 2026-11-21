@@ -108,3 +108,15 @@ fn status_mode_does_not_create_lock() {
     assert!(out.status.success());
     assert!(!lock.exists(), "Status mode must not take the single-instance lock");
 }
+
+#[test]
+fn create_lock_writes_pid_with_private_mode() {
+    let path = std::path::Path::new("/tmp/sk-create-lock-test.lock");
+    let _ = std::fs::remove_file(path);
+    session_keeper_rust::process::create_lock(path, 4242).unwrap();
+    assert_eq!(session_keeper_rust::process::read_lock(path), Some(4242));
+    use std::os::unix::fs::PermissionsExt;
+    let mode = std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
+    std::fs::remove_file(path).ok();
+}

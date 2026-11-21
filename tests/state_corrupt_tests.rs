@@ -109,3 +109,11 @@ fn states_differ_detects_nested_session_change() {
     assert!(states_differ(&b, &a));
     std::fs::remove_dir_all(dir("unused")).ok();
 }
+
+#[test]
+fn invalid_session_ids_are_rejected() {
+    let json = r#"{"sessions":[{"id":"ses_ok"},{"id":"ses_bad/../x"},{"id":"ses_a?x=1"}]}"#;
+    let st = session_keeper_rust::state::State::from_json(json).unwrap();
+    assert_eq!(st.sessions.len(), 1);
+    assert_eq!(st.sessions[0].id, "ses_ok");
+}

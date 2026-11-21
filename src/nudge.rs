@@ -113,8 +113,20 @@ pub fn decide(state: &State, session: &Session, status: &Status, now_ms: i64) ->
     decide_with_history(state, session, status, now_ms, recent)
 }
 
+fn encode_segment(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for b in value.bytes() {
+        if b.is_ascii_alphanumeric() || b == b'_' || b == b'-' {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{:02X}", b));
+        }
+    }
+    out
+}
+
 pub fn prompt_url(api: &str, sid: &str) -> String {
-    format!("{}/api/session/{}/prompt", api.trim_end_matches('/'), sid)
+    format!("{}/api/session/{}/prompt", api.trim_end_matches('/'), encode_segment(sid))
 }
 
 pub fn send_nudge(api: &str, password: &str, sid: &str, text: &str) -> Result<(), String> {
@@ -247,7 +259,7 @@ pub fn fetch_models(api: &str, password: &str) -> Vec<ModelInfo> {
 
 pub fn switch_model(api: &str, password: &str, sid: &str, model_id: &str, provider: &str) -> Result<(), String> {
     let auth = format!("Basic {}", b64(format!("opencode:{}", password).as_bytes()));
-    let url = format!("{}/api/session/{}/model", api.trim_end_matches('/'), sid);
+    let url = format!("{}/api/session/{}/model", api.trim_end_matches('/'), encode_segment(sid));
     let body = serde_json::json!({"model": {"id": model_id, "providerID": provider}}).to_string();
     let resp = ureq::post(&url)
         .timeout(Duration::from_secs(10))

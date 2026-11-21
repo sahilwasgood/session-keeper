@@ -5,7 +5,7 @@ use session_keeper_rust::cli::{parse_args, Mode, HELP};
 use session_keeper_rust::config::Config;
 use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_exists, session_model, session_title, Status};
 use session_keeper_rust::nudge::{append_history, decide, fetch_models, log_line, notify, nudges_in_last_hour_all, send_nudge, switch_model, Decision, ModelInfo};
-use session_keeper_rust::process::{pid_alive, read_lock};
+use session_keeper_rust::process::create_lock;
 use session_keeper_rust::state::{apply_tick_fields, states_differ, GlobalTickFields, Session, State, TickFields};
 use session_keeper_rust::safety::{fingerprint, should_nudge_after_debounce};
 use session_keeper_rust::ui::{format_age, history_for_sid, matches_filter, needs_attention, prompt_display, short_id, sort_key, status_changed, status_class, status_text, summary_line, CSS};
@@ -703,14 +703,9 @@ fn main() {
             | Mode::ImportState(_)
     );
     if lock_needed {
-        if let Some(pid) = read_lock(&lock_path) {
-            if pid_alive(pid) && pid != std::process::id() as i32 {
-                eprintln!("Session Keeper is already running (pid {}).", pid);
-                return;
-            }
-        }
-        if std::fs::write(&lock_path, std::process::id().to_string()).is_err() {
-            eprintln!("Could not write lock file; continuing without single-instance protection.");
+        if let Err(e) = create_lock(&lock_path, std::process::id() as i32) {
+            eprintln!("Session Keeper cannot start: {}", e);
+            return;
         }
     }
     let _lock_guard = if lock_needed { Some(LockGuard(lock_path)) } else { None };

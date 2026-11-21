@@ -158,7 +158,7 @@ impl State {
 
     fn normalize(mut s: State) -> State {
         let mut seen = std::collections::HashSet::new();
-        s.sessions.retain(|x| !x.id.is_empty() && seen.insert(x.id.clone()));
+        s.sessions.retain(|x| is_valid_session_id(&x.id) && seen.insert(x.id.clone()));
         s.min_gap = s.min_gap.clamp(0, 3600);
         s.max_nudges_per_hour = s.max_nudges_per_hour.max(0);
         s.global_nudge_cap = s.global_nudge_cap.max(0);
@@ -243,4 +243,9 @@ pub fn apply_tick_fields(state: &mut State, updates: &[TickFields], globals: Glo
     state.last_tick_ms = globals.last_tick_ms;
     state.cap_alert_ms = globals.cap_alert_ms;
     state.missing_alert_ms = globals.missing_alert_ms;
+}
+
+pub fn is_valid_session_id(id: &str) -> bool {
+    let rest = match id.strip_prefix("ses_") { Some(r) => r, None => return false };
+    !rest.is_empty() && rest.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
