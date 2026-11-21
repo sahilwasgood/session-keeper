@@ -91,6 +91,7 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
                 last_tick_ms: now_ms(),
                 cap_alert_ms: state.borrow().cap_alert_ms,
                 missing_alert_ms: state.borrow().missing_alert_ms,
+                cap_remaining: -1,
             });
         }
     };
@@ -286,6 +287,7 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
         last_tick_ms: now,
         cap_alert_ms: state.borrow().cap_alert_ms,
         missing_alert_ms: state.borrow().missing_alert_ms,
+        cap_remaining: if global_cap > 0 { (global_cap - used_global).max(0) } else { -1 },
     };
     (summary_line(&session_keeper_rust::config::format_log_time(now / 1000), nudged, held), updates, globals)
 }
@@ -333,7 +335,7 @@ fn launch_tick(
                 TickOutcome {
                     summary: "Watchdog error: tick failed".to_string(),
                     updates: Vec::new(),
-                    globals: GlobalTickFields { last_tick_ms: now_ms(), cap_alert_ms: 0, missing_alert_ms: 0 },
+                    globals: GlobalTickFields { last_tick_ms: now_ms(), cap_alert_ms: 0, missing_alert_ms: 0, cap_remaining: -1 },
                     views: HashMap::new(),
                     error: Some("tick failed".to_string()),
                 }
@@ -1551,8 +1553,13 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
                         let watched = st_ui.borrow().sessions.len();
                         let attention = views_ui.borrow().values().filter(|v| needs_attention(&v.status)).count();
                         let prefix = if Config::dry_run() { "DRY RUN | " } else { "" };
-                        summary_ui.set_label(&format!("{}{}  |  {} watched, {} need attention",
-                            prefix, outcome.summary, watched, attention));
+                        let cap_text = if outcome.globals.cap_remaining < 0 {
+                            String::new()
+                        } else {
+                            format!("  |  global cap {} left", outcome.globals.cap_remaining)
+                        };
+                        summary_ui.set_label(&format!("{}{}  |  {} watched, {} need attention{}",
+                            prefix, outcome.summary, watched, attention, cap_text));
                         title_ui.set_title(&format!("Session Keeper - {} need attention", attention));
                         history_ui.set_label(&tail_file(&Config::history_path(), 25));
                         log_ui.set_label(&tail_file(&Config::log_path(), 25));

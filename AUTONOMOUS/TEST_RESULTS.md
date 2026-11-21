@@ -76,3 +76,5 @@ OSS readiness: 31 test binaries green; GitHub Actions CI passed on first public 
 API error surfacing: added fetch_models_result/fetch_sessions_result (ureq::Error::Status mapped to HTTP message); GUI Discover/model picker now show real cause instead of "No sessions returned". CLI --sessions/--models exit 1 with the cause. Verified dead-API CLI (exit 1) and AT-SPI GUI label. 31 binaries green.
 
 Preflight: GUI and --watch modes log DB/credentials/notify transport status with concrete paths at startup; one-shot CLI modes skip it to avoid log spam. Verified live log lines and zero new lines from --status.
+
+R-013 partial: tick outcome carries cap_remaining (computed from global cap and hourly history); GUI status line shows "global cap N left" (verified via AT-SPI: 54 left), omitted when unknown/unlimited. 31 binaries green.

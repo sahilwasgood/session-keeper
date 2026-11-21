@@ -247,6 +247,8 @@ pub struct GlobalTickFields {
     pub last_tick_ms: i64,
     pub cap_alert_ms: i64,
     pub missing_alert_ms: i64,
+    /// Remaining global nudge budget this hour, or -1 when unknown/unlimited.
+    pub cap_remaining: i64,
 }
 
 pub fn apply_tick_fields(state: &mut State, updates: &[TickFields], globals: GlobalTickFields) {

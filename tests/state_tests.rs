@@ -109,6 +109,7 @@ fn tick_merge_preserves_user_edits() {
         last_tick_ms: 100,
         cap_alert_ms: 0,
         missing_alert_ms: 0,
+        cap_remaining: -1,
     });
     assert_eq!(st.sessions[0].nudges, 8);
     assert!(!st.sessions[0].enabled, "user pause must survive tick merge");

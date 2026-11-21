@@ -21,7 +21,7 @@ fn tf(id: &str) -> TickFields {
 }
 
 fn globals(last_tick_ms: i64) -> GlobalTickFields {
-    GlobalTickFields { last_tick_ms, cap_alert_ms: 0, missing_alert_ms: 0 }
+    GlobalTickFields { last_tick_ms, cap_alert_ms: 0, missing_alert_ms: 0, cap_remaining: -1 }
 }
 
 fn path(tag: &str) -> std::path::PathBuf {
@@ -34,7 +34,7 @@ fn empty_updates_still_apply_globals() {
     apply_tick_fields(
         &mut st,
         &[],
-        GlobalTickFields { last_tick_ms: 999, cap_alert_ms: 11, missing_alert_ms: 22 },
+        GlobalTickFields { last_tick_ms: 999, cap_alert_ms: 11, missing_alert_ms: 22, cap_remaining: 7 },
     );
     assert_eq!(st.last_tick_ms, 999);
     assert_eq!(st.cap_alert_ms, 11);
