@@ -94,3 +94,5 @@ Daily digest: local_day_start_ms uses localtime_r so "Today" starts at local mid
 R-001 heartbeat: DB-outage ticks now preserve last_tick_ms instead of stamping now, allowing the stale detector to fire. Verified with isolated missing-DB state seeded 3 minutes old: GUI showed "WATCHDOG STALE - last tick 3m 10s".
 
 R-015: configurable missing/cap cooldowns. Verified CLI --set-setting writes state and GUI Save settings persists spin values 7200/600 via AT-SPI, then restored to defaults. Defaults 3600s preserve prior behavior; 31 binaries green.
+
+R-001 completed: added Status::Unknown, used when run_tick cannot open the DB; cards show "unknown" / "database_unavailable" and "last progress none" instead of "missing"/"working". Verified via isolated missing-DB screenshot and AT-SPI; contrast test includes the new gray badge.

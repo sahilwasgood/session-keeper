@@ -18,6 +18,7 @@
 - New `--doctor` command reports database, credentials, notifier, and API reachability.
 - `--check-now --json` emits a machine-readable tick result with summary, cap remaining, and per-session views.
 - Missing-session and cap-alert cooldowns are now configurable in Settings and via `--set-setting`, defaulting to one hour.
+- Cards show an `unknown` badge with a `database_unavailable` reason during a database outage instead of falsely claiming `working`.
 
 ## v0.1.0 (2026-11-22)
 

@@ -254,7 +254,7 @@ IDs are stable references for other sessions to pick up. Owner is a *suggestion*
 
 | ID | Requirement | Priority | Suggested owner | Evidence anchor |
 |---|---|---|---|---|
-| R-001 | Alert + UI banner when DB/drive unavailable; do **not** refresh `last_tick_ms` on a paused tick; show cards as "unknown" | P0 | S6 + S5 | `main.rs:80-91,276-290,1462-1473` |
+| R-001 | DONE: paused summary + stale banner, heartbeat preserved on DB outage, cards show Status::Unknown | P0 | S6 + S5 | `main.rs:80-91,276-290,1462-1473` |
 | R-002 | Desktop alert on repeated nudge failure and on per-session cap reached; add cooldown | P0 | S6 | `main.rs:236-242`; `nudge.rs:82-84` |
 | R-003 | Session discovery: CLI `--list-sessions` and GUI picker; document how to obtain a `ses_` id | P0 | S6 + S5 | `main.rs:1001-1038`; `db.rs` |
 | R-004 | DECIDED by root (global pause now one click in toolbar): keep "away mode" as question-aware holding only; global off switch and per-session pause are the real pause controls. No semantic change. | either suppress all nudges when operator is away, or rename to "question-aware" and add a true away switch; DONE: broadened question detection via db::is_question (trim + fullwidth ?) | P0 | S3 decision + S6 | `db.rs:124-132` |

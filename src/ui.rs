@@ -7,6 +7,7 @@ pub fn status_text(status: &Status) -> &'static str {
         Status::Waiting => "waiting on question",
         Status::Stalled => "stalled",
         Status::Clean => "working",
+        Status::Unknown => "unknown",
     }
 }
 
@@ -17,6 +18,7 @@ pub fn status_class(status: &Status) -> &'static str {
         Status::Waiting => "badge-waiting",
         Status::Stalled => "badge-stalled",
         Status::Clean => "badge-idle",
+        Status::Unknown => "badge-unknown",
     }
 }
 
@@ -29,6 +31,7 @@ pub fn status_tooltip(status: &Status) -> &'static str {
         Status::Waiting => "Waiting on a question - the assistant asked for input.",
         Status::Stalled => "Stalled - no progress for longer than the idle threshold.",
         Status::Clean => "Working - recent assistant activity detected.",
+        Status::Unknown => "Unknown - the OpenCode database is unavailable.",
     }
 }
 
@@ -90,6 +93,7 @@ pub fn status_priority(status: &Status) -> i32 {
         Status::Waiting => 2,
         Status::Nudged => 3,
         Status::Clean => 4,
+        Status::Unknown => 5,
     }
 }
 
@@ -187,6 +191,7 @@ entry {
 .badge-waiting { background-color: #5a3a8a; color: #ece0ff; }
 .badge-stalled { background-color: #8a2d2d; color: #ffdede; }
 .badge-idle { background-color: #2d6b3f; color: #d8ffe2; }
+.badge-unknown { background-color: #555555; color: #f0f0f0; }
 /* was @theme_selected_bg_color as a foreground: 1.61:1, unreadable. */
 .summary { font-size: 15px; font-weight: bold; color: @theme_fg_color; padding: 6px 2px; }
 .note { font-size: 12px; color: alpha(@theme_fg_color, 0.8); }

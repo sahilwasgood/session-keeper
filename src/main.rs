@@ -77,6 +77,7 @@ fn reason(status: &Status) -> &'static str {
         Status::Waiting => "waiting_on_question",
         Status::Stalled => "no_new_output",
         Status::Clean => "working",
+        Status::Unknown => "database_unavailable",
     }
 }
 
@@ -317,6 +318,20 @@ fn run_tick(snapshot: State, persist: bool) -> TickOutcome {
             };
             views.insert(s.id.clone(), view);
         }
+    } else {
+        // A database outage must not make cards claim "working". Mark them
+        // unknown so the visible state matches the paused watchdog summary.
+        for s in st.borrow().sessions.iter() {
+            views.insert(s.id.clone(), SessionView {
+                status: Status::Unknown,
+                title: String::new(),
+                progress_ms: 0,
+                idle_ms: 0,
+                reason: "database_unavailable".to_string(),
+                exists: false,
+                model: String::new(),
+            });
+        }
     }
     TickOutcome { summary, updates, globals, views, error: None }
 }
@@ -422,7 +437,7 @@ fn refresh(
         if let Some(v) = view {
             badge.set_tooltip_text(Some(&session_keeper_rust::ui::status_tooltip(&v.status)));
         }
-        if view.map(|v| !v.exists).unwrap_or(false) {
+        if view.map(|v| !v.exists && v.status != Status::Unknown).unwrap_or(false) {
             badge.set_label("missing");
             badge.style_context().add_class("badge-stalled");
         }
@@ -480,7 +495,7 @@ fn refresh(
             format!(
                 "state {} | last progress {} | idle {}",
                 v.reason,
-                format_age(v.progress_ms, now_ms()),
+                if v.progress_ms > 0 { format_age(v.progress_ms, now_ms()) } else { "none".to_string() },
                 if v.idle_ms > 0 { format_age(v.idle_ms, now_ms()) } else { "none".to_string() }
             )
         }).unwrap_or_default();
@@ -516,7 +531,7 @@ fn refresh(
                     prompt_display(sess.prompt.as_deref(), &st_details.borrow().default_prompt),
                     sess.nudges,
                     if sess.last_action.is_empty() { "never" } else { &sess.last_action },
-                    format_age(view.progress_ms, now_ms()),
+                    if view.progress_ms > 0 { format_age(view.progress_ms, now_ms()) } else { "none".to_string() },
                     if view.idle_ms > 0 { format_age(view.idle_ms, now_ms()) } else { "none".to_string() },
                     view.exists,
                 ),

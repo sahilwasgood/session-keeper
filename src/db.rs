@@ -8,6 +8,8 @@ pub enum Status {
     Waiting,
     Stalled,
     Clean,
+    /// Database unavailable, so the real state cannot be determined.
+    Unknown,
 }
 
 fn last_event(conn: &Connection, sid: &str) -> (Option<String>, i64, String) {

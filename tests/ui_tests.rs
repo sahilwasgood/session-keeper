@@ -58,9 +58,21 @@ fn badge_and_button_colors_meet_wcag_aa() {
         ("idle", "#2d6b3f", "#d8ffe2"),
         ("suggested", "#2d7d46", "#ffffff"),
         ("destructive", "#7d2d2d", "#ffffff"),
+        ("unknown", "#555555", "#f0f0f0"),
     ];
     for (name, bg, fg) in pairs {
         let ratio = contrast(bg, fg);
         assert!(ratio >= 4.5, "{} contrast {:.2}:1 is below AA", name, ratio);
     }
+}
+
+#[test]
+fn unknown_status_is_explicit_and_not_an_attention_state() {
+    use session_keeper_rust::db::Status;
+    use session_keeper_rust::ui::{needs_attention, status_class, status_text, status_tooltip};
+    let s = Status::Unknown;
+    assert_eq!(status_text(&s), "unknown");
+    assert_eq!(status_class(&s), "badge-unknown");
+    assert!(status_tooltip(&s).contains("database"));
+    assert!(!needs_attention(&s));
 }
