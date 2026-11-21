@@ -1,16 +1,18 @@
 use glib::clone;
 use gtk::prelude::*;
 use rusqlite::{Connection, OpenFlags};
-use session_keeper_rust::config::{Config, DRIVE};
-use session_keeper_rust::db::{classify, last_idle_ts, session_title, Status};
-use session_keeper_rust::nudge::{append_history, decide, log_line, send_nudge, Decision};
+use session_keeper_rust::cli::{parse_args, Mode, HELP};
+use session_keeper_rust::config::Config;
+use session_keeper_rust::db::{classify, last_assistant_text, last_idle_ts, session_title, Status};
+use session_keeper_rust::nudge::{append_history, decide, log_line, notify, nudges_in_last_hour_all, send_nudge, Decision};
 use session_keeper_rust::state::{Session, State};
-use session_keeper_rust::ui::{prompt_display, short_id, status_class, status_text, summary_line, CSS};
+use session_keeper_rust::safety::{fingerprint, should_nudge_after_debounce};
+use session_keeper_rust::ui::{matches_filter, prompt_display, short_id, status_class, status_text, summary_line, CSS};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
+use std::sync::mpsc::{channel, Sender, TryRecvError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]
@@ -29,13 +31,9 @@ fn now_ms() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
 }
 
-fn stamp(ms: i64) -> String {
-    let secs = (ms / 1000) % 86_400;
-    format!("{:02}:{:02}:{:02}", secs / 3600, (secs / 60) % 60, secs % 60)
-}
-
 fn open_db() -> Option<Connection> {
-    if !Path::new(DRIVE).exists() || !Config::db_path().exists() {
+    let drive = Config::drive();
+    if !drive.exists() || !Config::db_path().exists() {
         return None;
     }
     Connection::open_with_flags(Config::db_path(), OpenFlags::SQLITE_OPEN_READ_ONLY)
@@ -44,6 +42,23 @@ fn open_db() -> Option<Connection> {
             c.busy_timeout(Duration::from_millis(1200)).ok()?;
             Some(c)
         })
+}
+
+fn icon_button(label: &str, icon: &str) -> gtk::Button {
+    let b = gtk::Button::with_label(label);
+    b.set_image(Some(&gtk::Image::from_icon_name(Some(icon), gtk::IconSize::Button)));
+    b.set_always_show_image(true);
+    b
+}
+
+fn reason(status: &Status) -> &'static str {
+    match status {
+        Status::Due => "idle",
+        Status::Nudged => "already_nudged",
+        Status::Waiting => "waiting_on_question",
+        Status::Stalled => "no_new_output",
+        Status::Clean => "working",
+    }
 }
 
 fn tick(state: &Rc<RefCell<State>>) -> String {
@@ -57,8 +72,11 @@ fn tick(state: &Rc<RefCell<State>>) -> String {
         }
     };
     let sessions: Vec<Session> = state.borrow().sessions.clone();
+    let global_cap = state.borrow().global_nudge_cap;
+    let mut used_global = if global_cap > 0 { nudges_in_last_hour_all(now) } else { 0 };
     let mut nudged = 0;
     let mut held = 0;
+
     for s in &sessions {
         let (status, decision) = {
             let st = state.borrow();
@@ -66,46 +84,97 @@ fn tick(state: &Rc<RefCell<State>>) -> String {
             let decision = decide(&st, s, &status, now);
             (status, decision)
         };
-        match decision {
-            Decision::Nudge => {
-                let raw = s.prompt.clone().unwrap_or_else(|| state.borrow().default_prompt.clone());
-                let prompt = raw.trim().to_string();
-                let prompt = if prompt.is_empty() { "continue".to_string() } else { prompt };
-                match send_nudge(Config::api_base(), &Config::password(), &s.id, &prompt) {
-                    Ok(()) => {
-                        let ts = last_idle_ts(&conn, &s.id);
-                        {
-                            let mut st = state.borrow_mut();
-                            if let Some(x) = st.sessions.iter_mut().find(|x| x.id == s.id) {
-                                x.handled = ts;
-                                x.prompted = now;
-                                x.last_nudge = now;
-                                x.nudges += 1;
-                                x.last_action = format!("nudged {}", stamp(now));
-                            }
-                        }
-                        append_history(&s.id, "nudge", &prompt);
-                        log_line(&format!("{}: prompted", s.id));
-                        nudged += 1;
-                    }
-                    Err(e) => {
-                        let mut st = state.borrow_mut();
-                        if let Some(x) = st.sessions.iter_mut().find(|x| x.id == s.id) {
-                            x.last_action = format!("failed {}", e);
-                        }
-                        log_line(&format!("{}: prompt failed {}", s.id, e));
-                    }
+
+        if decision != Decision::Nudge {
+            if status != Status::Due {
+                if let Some(x) = state.borrow_mut().sessions.iter_mut().find(|x| x.id == s.id) {
+                    x.idle_streak = 0;
                 }
             }
-            Decision::Hold => held += 1,
-            Decision::Skip => {}
+            if decision == Decision::Hold {
+                log_line(&format!("{}: hold {}", s.id, reason(&status)));
+                held += 1;
+            }
+            continue;
         }
-        let _ = status;
+
+        let fp = fingerprint(&last_assistant_text(&conn, &s.id));
+        let hash_same = state
+            .borrow()
+            .sessions
+            .iter()
+            .find(|x| x.id == s.id)
+            .and_then(|x| x.last_hash.as_deref())
+            == Some(fp.as_str());
+        if hash_same {
+            log_line(&format!("{}: hold loop (unchanged output)", s.id));
+            held += 1;
+            continue;
+        }
+
+        let streak = {
+            let mut st = state.borrow_mut();
+            let x = st.sessions.iter_mut().find(|x| x.id == s.id).unwrap();
+            x.idle_streak += 1;
+            x.idle_streak
+        };
+        if !should_nudge_after_debounce(streak) {
+            log_line(&format!("{}: hold debounce {}/2", s.id, streak));
+            held += 1;
+            continue;
+        }
+
+        if global_cap > 0 && used_global >= global_cap {
+            log_line(&format!("{}: hold global cap {}/{}", s.id, used_global, global_cap));
+            held += 1;
+            continue;
+        }
+
+        if Config::dry_run() {
+            log_line(&format!("{}: would nudge (dry run)", s.id));
+            held += 1;
+            continue;
+        }
+
+        let raw = s.prompt.clone().unwrap_or_else(|| state.borrow().default_prompt.clone());
+        let prompt = raw.trim().to_string();
+        let prompt = if prompt.is_empty() { "continue".to_string() } else { prompt };
+        match send_nudge(&Config::api_base(), &Config::password(), &s.id, &prompt) {
+            Ok(()) => {
+                let ts = last_idle_ts(&conn, &s.id);
+                let title = session_title(&conn, &s.id);
+                {
+                    let mut st = state.borrow_mut();
+                    if let Some(x) = st.sessions.iter_mut().find(|x| x.id == s.id) {
+                        x.handled = ts;
+                        x.prompted = now;
+                        x.last_nudge = now;
+                        x.nudges += 1;
+                        x.last_action = format!("nudged {}", session_keeper_rust::config::format_log_time(now / 1000));
+                        x.idle_streak = 0;
+                        x.last_hash = Some(fp);
+                    }
+                }
+                append_history(&s.id, "nudge", &prompt);
+                notify("Session Keeper", &format!("Nudged {}", if title.is_empty() { &s.id } else { &title }));
+                log_line(&format!("{}: prompted", s.id));
+                nudged += 1;
+                used_global += 1;
+            }
+            Err(e) => {
+                let mut st = state.borrow_mut();
+                if let Some(x) = st.sessions.iter_mut().find(|x| x.id == s.id) {
+                    x.last_action = format!("failed {}", e);
+                }
+                log_line(&format!("{}: prompt failed {}", s.id, e));
+            }
+        }
     }
+
     if nudged > 0 {
         let _ = state.borrow().save();
     }
-    summary_line(&stamp(now), nudged, held)
+    summary_line(&session_keeper_rust::config::format_log_time(now / 1000), nudged, held)
 }
 
 fn run_tick(snapshot: State) -> TickOutcome {
@@ -160,6 +229,7 @@ fn refresh(
     state: &Rc<RefCell<State>>,
     list: &gtk::Box,
     views: &Rc<RefCell<HashMap<String, SessionView>>>,
+    filter: &Rc<RefCell<String>>,
 ) {
     for child in list.children() {
         list.remove(&child);
@@ -167,10 +237,12 @@ fn refresh(
     let sessions = state.borrow().sessions.clone();
     let default_prompt = state.borrow().default_prompt.clone();
     let view_map = views.borrow();
+    let filter_text = filter.borrow();
     for s in &sessions {
         let view = view_map.get(&s.id);
         let status = view.map(|v| v.status).unwrap_or(Status::Clean);
         let title = view.map(|v| v.title.as_str()).unwrap_or("");
+        if !matches_filter(&s.id, title, &filter_text) { continue; }
 
         let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
         card.style_context().add_class("card");
@@ -198,13 +270,14 @@ fn refresh(
         let st = state.clone();
         let list_c = list.clone();
         let views_c = views.clone();
+        let filter_c = filter.clone();
         let sid = s.id.clone();
         pause.connect_clicked(clone!(@strong st, @strong list_c, @strong views_c, @strong sid => move |_| {
             if let Some(x) = st.borrow_mut().sessions.iter_mut().find(|x| x.id == sid) {
                 x.enabled = !x.enabled;
             }
             let _ = st.borrow().save();
-            refresh(&st, &list_c, &views_c);
+            refresh(&st, &list_c, &views_c, &filter_c);
         }));
         top.add(&pause);
         card.add(&top);
@@ -221,21 +294,23 @@ fn refresh(
         card.add(&meta);
 
         let actions = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        let edit = gtk::Button::with_label("Edit prompt");
+        let edit = icon_button("Edit prompt", "document-edit-symbolic");
         let st = state.clone();
         let list_c = list.clone();
         let views_c = views.clone();
+        let filter_c = filter.clone();
         let sid_edit = s.id.clone();
         let cur = s.prompt.clone();
         edit.connect_clicked(clone!(@strong st, @strong list_c, @strong views_c, @strong sid_edit, @strong cur => move |_| {
-            edit_prompt(&st, &list_c, &views_c, &sid_edit, cur.as_deref());
+            edit_prompt(&st, &list_c, &views_c, &filter_c, &sid_edit, cur.as_deref());
         }));
         actions.add(&edit);
 
-        let del = gtk::Button::with_label("Remove");
+        let del = icon_button("Remove", "user-trash-symbolic");
         let st = state.clone();
         let list_c = list.clone();
         let views_c = views.clone();
+        let filter_c = filter.clone();
         let sid_del = s.id.clone();
         del.connect_clicked(clone!(@strong st, @strong list_c, @strong views_c, @strong sid_del => move |_| {
             {
@@ -243,7 +318,7 @@ fn refresh(
                 st_mut.sessions.retain(|x| x.id != sid_del);
                 let _ = st_mut.save();
             }
-            refresh(&st, &list_c, &views_c);
+            refresh(&st, &list_c, &views_c, &filter_c);
         }));
         actions.add(&del);
         card.add(&actions);
@@ -262,6 +337,7 @@ fn edit_prompt(
     state: &Rc<RefCell<State>>,
     list: &gtk::Box,
     views: &Rc<RefCell<HashMap<String, SessionView>>>,
+    filter: &Rc<RefCell<String>>,
     sid: &str,
     current: Option<&str>,
 ) {
@@ -280,6 +356,7 @@ fn edit_prompt(
     let st = state.clone();
     let list_c = list.clone();
     let views_c = views.clone();
+    let filter_c = filter.clone();
     let sid = sid.to_string();
     dialog.connect_response(move |dlg, resp| {
         if resp == gtk::ResponseType::Ok {
@@ -291,13 +368,42 @@ fn edit_prompt(
                 }
                 let _ = st_mut.save();
             }
-            refresh(&st, &list_c, &views_c);
+            refresh(&st, &list_c, &views_c, &filter_c);
         }
         dlg.close();
     });
 }
 
 fn main() {
+    let raw: Vec<String> = std::env::args().collect();
+    let opts = parse_args(&raw);
+    if opts.dry_run {
+        std::env::set_var("SESSION_KEEPER_DRY_RUN", "1");
+    }
+    match opts.mode {
+        Mode::Help => {
+            print!("{}", HELP);
+            return;
+        }
+        Mode::CheckNow => {
+            let st = Rc::new(RefCell::new(State::load()));
+            let out = run_tick(st.borrow().clone());
+            println!("{}", out.summary);
+            return;
+        }
+        Mode::Status => {
+            let st = State::load();
+            let conn = open_db();
+            for s in &st.sessions {
+                let status = conn.as_ref().map(|c| classify(c, &s.id, &st)).unwrap_or(Status::Clean);
+                println!("{}  {}  {}  nudges={}  last={}", short_id(&s.id), s.id,
+                    status_text(&status), s.nudges, s.last_action);
+            }
+            return;
+        }
+        Mode::Gui => {}
+    }
+
     gtk::init().expect("GTK3 failed to initialize");
 
     if let Some(screen) = gtk::gdk::Screen::default() {
@@ -312,6 +418,7 @@ fn main() {
 
     let state = Rc::new(RefCell::new(State::load()));
     let views: Rc<RefCell<HashMap<String, SessionView>>> = Rc::new(RefCell::new(HashMap::new()));
+    let filter: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
     let busy = Rc::new(Cell::new(false));
     let (tx, rx) = channel::<TickOutcome>();
 
@@ -320,13 +427,30 @@ fn main() {
     window.set_default_size(960, 680);
     window.set_size_request(760, 520);
     window.connect_destroy(|_| gtk::main_quit());
+    let st_key = state.clone();
+    let tx_key = tx.clone();
+    let busy_key = busy.clone();
+    window.connect_key_press_event(move |_, key| {
+        use gtk::gdk::keys::constants;
+        if key.keyval() == constants::F5 {
+            launch_tick(&st_key, &tx_key, &busy_key);
+            return glib::Propagation::Stop;
+        }
+        if key.keyval() == constants::q
+            && key.state().contains(gtk::gdk::ModifierType::CONTROL_MASK)
+        {
+            gtk::main_quit();
+            return glib::Propagation::Stop;
+        }
+        glib::Propagation::Proceed
+    });
 
     let header = gtk::HeaderBar::new();
     header.set_title(Some("Session Keeper"));
     header.set_subtitle(Some("On-demand OpenCode watchdog"));
     header.set_show_close_button(true);
     window.set_titlebar(Some(&header));
-    let quit = gtk::Button::with_label("Quit");
+    let quit = icon_button("Quit", "window-close-symbolic");
     quit.style_context().add_class("destructive-action");
     quit.connect_clicked(|_| gtk::main_quit());
     header.pack_end(&quit);
@@ -351,28 +475,34 @@ fn main() {
     entry.set_hexpand(true);
     controls.add(&entry);
 
-    let add = gtk::Button::with_label("Add session");
+    let filter_entry = gtk::Entry::new();
+    filter_entry.set_placeholder_text(Some("Filter sessions..."));
+    filter_entry.set_width_chars(18);
+    controls.add(&filter_entry);
+
+    let add = icon_button("Add session", "list-add-symbolic");
     let st_add = state.clone();
     let list_add = Rc::new(RefCell::new(gtk::Box::new(gtk::Orientation::Vertical, 2)));
     let views_add = views.clone();
+    let filter_add = filter.clone();
     let summary_add = summary.clone();
     let entry_add = entry.clone();
-    add.connect_clicked(clone!(@strong st_add, @strong list_add, @strong views_add, @strong summary_add, @strong entry_add => move |_| {
+    add.connect_clicked(clone!(@strong st_add, @strong list_add, @strong views_add, @strong filter_add, @strong summary_add, @strong entry_add => move |_| {
         let sid = entry_add.text().trim().to_string();
         if sid.starts_with("ses_") && !st_add.borrow().sessions.iter().any(|s| s.id == sid) {
             st_add.borrow_mut().sessions.push(Session {
                 id: sid, enabled: true, prompt: None, handled: 0, prompted: 0,
-                last_nudge: 0, nudges: 0, last_action: "added".to_string(),
+                last_nudge: 0, nudges: 0, last_action: "added".to_string(), idle_streak: 0, last_hash: None,
             });
             let _ = st_add.borrow().save();
             entry_add.set_text("");
             summary_add.set_label("Session added");
-            refresh(&st_add, &list_add.borrow(), &views_add);
+            refresh(&st_add, &list_add.borrow(), &views_add, &filter_add);
         }
     }));
     controls.add(&add);
 
-    let check = gtk::Button::with_label("Check now");
+    let check = icon_button("Check now", "view-refresh-symbolic");
     check.style_context().add_class("suggested-action");
     let st_check = state.clone();
     let tx_check = tx.clone();
@@ -391,6 +521,15 @@ fn main() {
     scroll.set_vexpand(true);
     scroll.add(&list);
     outer.add(&scroll);
+
+    let filter_state = filter.clone();
+    let list_filter = list.clone();
+    let views_filter = views.clone();
+    let st_filter = state.clone();
+    filter_entry.connect_changed(move |e| {
+        *filter_state.borrow_mut() = e.text().to_string();
+        refresh(&st_filter, &list_filter, &views_filter, &filter_state);
+    });
 
     // Settings panel from the old web dashboard.
     let settings = gtk::Expander::new(Some("Settings: prompt, gap, hourly cap, away mode"));
@@ -421,7 +560,26 @@ fn main() {
     settings_box.add(&row2);
     settings_box.add(&away);
 
-    let save_settings = gtk::Button::with_label("Save settings");
+    let global_cap = gtk::SpinButton::new(
+        Some(&gtk::Adjustment::new(state.borrow().global_nudge_cap as f64, 0.0, 500.0, 1.0, 10.0, 0.0)),
+        1.0, 0,
+    );
+    let row3 = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    row3.add(&gtk::Label::new(Some("Global nudge cap/hour:")));
+    row3.add(&global_cap);
+    settings_box.add(&row3);
+
+    let enabled_cb = gtk::CheckButton::with_label("Watching enabled (global off switch)");
+    enabled_cb.set_active(state.borrow().enabled);
+    settings_box.add(&enabled_cb);
+    let dry_cb = gtk::CheckButton::with_label("Dry run: preview decisions, send no nudges");
+    dry_cb.set_active(Config::dry_run());
+    settings_box.add(&dry_cb);
+    let notify_cb = gtk::CheckButton::with_label("Desktop notifications on nudge");
+    notify_cb.set_active(Config::notifications());
+    settings_box.add(&notify_cb);
+
+    let save_settings = icon_button("Save settings", "document-save-symbolic");
     save_settings.style_context().add_class("suggested-action");
     let st_settings = state.clone();
     save_settings.connect_clicked(move |_| {
@@ -431,9 +589,52 @@ fn main() {
         st.min_gap = min_gap.value() as i64;
         st.max_nudges_per_hour = cap.value() as i64;
         st.away_mode = away.is_active();
+        st.global_nudge_cap = global_cap.value() as i64;
+        st.enabled = enabled_cb.is_active();
         let _ = st.save();
+        std::env::set_var("SESSION_KEEPER_DRY_RUN", if dry_cb.is_active() { "1" } else { "0" });
+        std::env::set_var("SESSION_KEEPER_NOTIFY", if notify_cb.is_active() { "1" } else { "0" });
     });
     settings_box.add(&save_settings);
+
+    let io_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let export_btn = icon_button("Export settings", "document-save-as-symbolic");
+    let st_export = state.clone();
+    let summary_io = summary.clone();
+    export_btn.connect_clicked(move |_| {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/mint".to_string());
+        let path = std::path::Path::new(&home).join("session-keeper-export.json");
+        let text = serde_json::to_string_pretty(&*st_export.borrow()).unwrap_or_default();
+        match std::fs::write(&path, text) {
+            Ok(()) => summary_io.set_label(&format!("Exported to {}", path.display())),
+            Err(e) => summary_io.set_label(&format!("Export failed: {}", e)),
+        }
+    });
+    io_row.add(&export_btn);
+    let import_btn = icon_button("Import settings", "document-open-symbolic");
+    let st_import = state.clone();
+    let list_import = list.clone();
+    let views_import = views.clone();
+    let filter_import = filter.clone();
+    let summary_import = summary.clone();
+    import_btn.connect_clicked(move |_| {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/home/mint".to_string());
+        let path = std::path::Path::new(&home).join("session-keeper-export.json");
+        match std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str::<State>(&s).ok())
+        {
+            Some(new_state) => {
+                *st_import.borrow_mut() = new_state;
+                let _ = st_import.borrow().save();
+                summary_import.set_label(&format!("Imported from {}", path.display()));
+                refresh(&st_import, &list_import, &views_import, &filter_import);
+            }
+            None => summary_import.set_label("Import failed: no valid export file"),
+        }
+    });
+    io_row.add(&import_btn);
+    settings_box.add(&io_row);
     settings.add(&settings_box);
     outer.add(&settings);
 
@@ -459,6 +660,7 @@ fn main() {
     let rx_cell = Rc::new(RefCell::new(Some(rx)));
     let st_ui = state.clone();
     let views_ui = views.clone();
+    let filter_ui = filter.clone();
     let summary_ui = summary.clone();
     let busy_ui = busy.clone();
     let list_ui = list.clone();
@@ -474,7 +676,7 @@ fn main() {
                     summary_ui.set_label(&outcome.summary);
                     history_ui.set_label(&tail_file(&Config::history_path(), 25));
                     log_ui.set_label(&tail_file(&Config::log_path(), 25));
-                    refresh(&st_ui, &list_ui, &views_ui);
+                    refresh(&st_ui, &list_ui, &views_ui, &filter_ui);
                     busy_ui.set(false);
                 }
                 Err(TryRecvError::Empty) => {}
@@ -492,7 +694,7 @@ fn main() {
         glib::ControlFlow::Continue
     });
 
-    refresh(&state, &list, &views);
+    refresh(&state, &list, &views, &filter);
     window.show_all();
     launch_tick(&state, &tx, &busy);
     gtk::main();

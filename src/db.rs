@@ -54,6 +54,10 @@ fn last_assistant(conn: &Connection, sid: &str) -> (i64, String) {
     }
 }
 
+pub fn last_assistant_text(conn: &Connection, sid: &str) -> String {
+    last_assistant(conn, sid).1
+}
+
 pub fn session_title(conn: &Connection, sid: &str) -> String {
     conn.query_row("SELECT title FROM session_v2 WHERE id=?1", [sid], |r| r.get::<_, Option<String>>(0))
         .optional()
@@ -83,7 +87,7 @@ pub fn classify(conn: &Connection, sid: &str, state: &State) -> Status {
         prompted: 0,
         last_nudge: 0,
         nudges: 0,
-        last_action: String::new(),
+        last_action: String::new(), idle_streak: 0, last_hash: None,
     };
     let sess = state.sessions.iter().find(|s| s.id == sid).unwrap_or(&fallback);
     if !sess.enabled {

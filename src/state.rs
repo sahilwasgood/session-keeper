@@ -7,6 +7,7 @@ fn default_enabled() -> bool { true }
 fn default_prompt() -> String { "continue, dont stop".to_string() }
 fn default_min_gap() -> i64 { 10 }
 fn default_max_nudges() -> i64 { 30 }
+fn default_global_cap() -> i64 { 60 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
@@ -25,6 +26,10 @@ pub struct Session {
     pub nudges: i64,
     #[serde(default)]
     pub last_action: String,
+    #[serde(default)]
+    pub idle_streak: i32,
+    #[serde(default)]
+    pub last_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,6 +44,8 @@ pub struct State {
     pub max_nudges_per_hour: i64,
     #[serde(default)]
     pub away_mode: bool,
+    #[serde(default = "default_global_cap")]
+    pub global_nudge_cap: i64,
     #[serde(default)]
     pub sessions: Vec<Session>,
 }
@@ -51,6 +58,7 @@ impl Default for State {
             min_gap: 10,
             max_nudges_per_hour: 30,
             away_mode: false,
+            global_nudge_cap: 60,
             sessions: Vec::new(),
         }
     }

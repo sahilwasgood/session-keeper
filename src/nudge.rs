@@ -36,6 +36,24 @@ pub fn nudges_in_last_hour(sid: &str, now_ms: i64) -> i64 {
         .count() as i64
 }
 
+pub fn nudges_in_last_hour_all(now_ms: i64) -> i64 {
+    let cutoff = now_ms - 3_600_000;
+    std::fs::read_to_string(Config::history_path())
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|v| v.get("kind").and_then(|s| s.as_str()) == Some("nudge"))
+        .filter(|v| v.get("t").and_then(|t| t.as_i64()).unwrap_or(0) >= cutoff)
+        .count() as i64
+}
+
+pub fn notify(title: &str, message: &str) {
+    if !Config::notifications() { return; }
+    let _ = std::process::Command::new("notify-send")
+        .arg(title).arg(message)
+        .spawn();
+}
+
 pub fn decide_with_history(
     state: &State,
     session: &Session,
@@ -109,27 +127,30 @@ pub fn append_history(sid: &str, kind: &str, detail: &str) {
     let detail: String = detail.chars().take(200).collect();
     let line = serde_json::json!({ "t": now, "sid": sid, "kind": kind, "detail": detail });
     use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
         let _ = writeln!(f, "{}", line);
+    }
+    if let Ok(text) = std::fs::read_to_string(&path) {
+        let all: Vec<&str> = text.lines().collect();
+        if all.len() > 1000 {
+            let tail = all[all.len() - 500..].join("\n") + "\n";
+            let _ = std::fs::write(&path, tail);
+        }
     }
 }
 
 pub fn log_line(message: &str) {
     use std::io::Write;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(Config::log_path())
     {
-        let _ = writeln!(f, "{} {}", chrono_stamp(), message);
+        let _ = writeln!(f, "{} {}", crate::config::format_log_time(now), message);
     }
 }
 
-fn chrono_stamp() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    // seconds since epoch; readable enough for a log prefix without another dependency
-    format!("{}", secs)
-}

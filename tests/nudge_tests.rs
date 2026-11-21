@@ -11,7 +11,7 @@ fn sess() -> Session {
         prompted: 0,
         last_nudge: 0,
         nudges: 0,
-        last_action: String::new(),
+        last_action: String::new(), idle_streak: 0, last_hash: None,
     }
 }
 

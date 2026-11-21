@@ -14,3 +14,11 @@ fn prompt_display_shows_custom_prompt() {
 fn prompt_display_ignores_blank_custom_prompt() {
     assert_eq!(prompt_display(Some("   "), "continue"), "default: continue");
 }
+
+#[test]
+fn filter_matches_id_or_title() {
+    assert!(session_keeper_rust::ui::matches_filter("ses_abc123", "tg", ""));
+    assert!(session_keeper_rust::ui::matches_filter("ses_abc123", "tg", "TG"));
+    assert!(session_keeper_rust::ui::matches_filter("ses_abc123", "tg", "abc"));
+    assert!(!session_keeper_rust::ui::matches_filter("ses_abc123", "tg", "zzz"));
+}
