@@ -40,6 +40,7 @@ struct TickOutcome {
     updates: Vec<TickFields>,
     globals: GlobalTickFields,
     views: HashMap<String, SessionView>,
+    error: Option<String>,
 }
 
 fn now_ms() -> i64 {
@@ -309,7 +310,7 @@ fn run_tick(snapshot: State, persist: bool) -> TickOutcome {
             views.insert(s.id.clone(), view);
         }
     }
-    TickOutcome { summary, updates, globals, views }
+    TickOutcome { summary, updates, globals, views, error: None }
 }
 
 fn launch_tick(
@@ -324,7 +325,20 @@ fn launch_tick(
     let snapshot = state.borrow().clone();
     let tx = tx.clone();
     std::thread::spawn(move || {
-        let outcome = run_tick(snapshot, false);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_tick(snapshot, false)));
+        let outcome = match result {
+            Ok(o) => o,
+            Err(_) => {
+                log_line("Watchdog error: tick failed, see log for details");
+                TickOutcome {
+                    summary: "Watchdog error: tick failed".to_string(),
+                    updates: Vec::new(),
+                    globals: GlobalTickFields { last_tick_ms: now_ms(), cap_alert_ms: 0, missing_alert_ms: 0 },
+                    views: HashMap::new(),
+                    error: Some("tick failed".to_string()),
+                }
+            }
+        };
         let _ = tx.send(outcome);
     });
 }
@@ -1469,32 +1483,43 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
         if let Some(r) = guard.as_mut() {
             match r.try_recv() {
                 Ok(outcome) => {
-                    {
-                        // Disk is authoritative for settings and watch-list edits made by
-                        // the CLI or another process. Only tick-owned fields come from
-                        // the worker snapshot, so an external pause cannot be undone by
-                        // a tick finishing a moment later.
-                        let mut merged = State::load();
-                        apply_tick_fields(&mut merged, &outcome.updates, outcome.globals);
-                        let _ = merged.save();
-                        pause_ui.set_label(if merged.enabled { "Pause all" } else { "Resume all" });
-                        *st_ui.borrow_mut() = merged;
+                    if let Some(err) = outcome.error {
+                        // A worker panic must not leave Check now disabled forever.
+                        // Keep the last good views and state; just surface the error.
+                        summary_ui.set_label(&format!("Watchdog error: {} (Check now to retry)", err));
+                        busy_ui.set(false);
+                    } else {
+                        {
+                            // Disk is authoritative for settings and watch-list edits made by
+                            // the CLI or another process. Only tick-owned fields come from
+                            // the worker snapshot, so an external pause cannot be undone by
+                            // a tick finishing a moment later.
+                            let mut merged = State::load();
+                            apply_tick_fields(&mut merged, &outcome.updates, outcome.globals);
+                            let _ = merged.save();
+                            pause_ui.set_label(if merged.enabled { "Pause all" } else { "Resume all" });
+                            *st_ui.borrow_mut() = merged;
+                        }
+                        *views_ui.borrow_mut() = outcome.views;
+                        let watched = st_ui.borrow().sessions.len();
+                        let attention = views_ui.borrow().values().filter(|v| needs_attention(&v.status)).count();
+                        let prefix = if Config::dry_run() { "DRY RUN | " } else { "" };
+                        summary_ui.set_label(&format!("{}{}  |  {} watched, {} need attention",
+                            prefix, outcome.summary, watched, attention));
+                        title_ui.set_title(&format!("Session Keeper - {} need attention", attention));
+                        history_ui.set_label(&tail_file(&Config::history_path(), 25));
+                        log_ui.set_label(&tail_file(&Config::log_path(), 25));
+                        digest_ui.set_label(&today_digest());
+                        refresh(&st_ui, &list_ui, &views_ui, &filter_ui, &attention_ui);
+                        busy_ui.set(false);
                     }
-                    *views_ui.borrow_mut() = outcome.views;
-                    let watched = st_ui.borrow().sessions.len();
-                    let attention = views_ui.borrow().values().filter(|v| needs_attention(&v.status)).count();
-                    let prefix = if Config::dry_run() { "DRY RUN | " } else { "" };
-                    summary_ui.set_label(&format!("{}{}  |  {} watched, {} need attention",
-                        prefix, outcome.summary, watched, attention));
-                    title_ui.set_title(&format!("Session Keeper - {} need attention", attention));
-                    history_ui.set_label(&tail_file(&Config::history_path(), 25));
-                    log_ui.set_label(&tail_file(&Config::log_path(), 25));
-                    digest_ui.set_label(&today_digest());
-                    refresh(&st_ui, &list_ui, &views_ui, &filter_ui, &attention_ui);
-                    busy_ui.set(false);
                 }
                 Err(TryRecvError::Empty) => {}
-                Err(TryRecvError::Disconnected) => {}
+                Err(TryRecvError::Disconnected) => {
+                    log_line("Watchdog error: worker channel disconnected");
+                    summary_ui.set_label("Watchdog error: worker stopped (restart app)");
+                    busy_ui.set(false);
+                }
             }
         }
         glib::ControlFlow::Continue

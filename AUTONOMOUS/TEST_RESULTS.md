@@ -58,3 +58,5 @@ SSE observability: connection/disconnection logged once, retry errors throttled 
 Toolbar pause verified via AT-SPI: Pause all -> enabled=false, label "Resume all"; second click -> enabled=true, label "Pause all".
 
 Toolbar pause label drift fixed: the Settings bulk button shadowed the toolbar toggle variable, so label updates hit the wrong widget. Renamed toolbar toggle to pause_toggle; external CLI pause now flips toolbar to "Resume all" (verified via AT-SPI and screenshot) and back.
+
+Worker error handling (R-012): launch_tick wraps run_tick in catch_unwind; a panic now sends an error outcome, the GUI surfaces it in the summary and resets busy so Check now stays usable. Disconnected channel also resets busy and logs. Normal Check now verified via AT-SPI (summary timestamp advanced); all 29 binaries green.

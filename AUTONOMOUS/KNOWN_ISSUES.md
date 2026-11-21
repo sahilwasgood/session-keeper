@@ -8,3 +8,5 @@
 Event-driven SSE wakeups implemented as accelerator; 30s polling retained as fallback.
 
 Resolved: toolbar pause label no longer drifts after external CLI pause/resume. Root cause was Rust variable shadowing between the toolbar toggle and the Settings bulk pause button.
+
+R-012 addressed: worker panic no longer wedges the Check now button; error shown in summary, busy reset. Panic path itself is not unit-tested (requires injecting a panic into run_tick).

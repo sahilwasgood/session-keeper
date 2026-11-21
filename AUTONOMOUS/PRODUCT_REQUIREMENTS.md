@@ -265,7 +265,7 @@ IDs are stable references for other sessions to pick up. Owner is a *suggestion*
 | R-009 | Notify on state-corrupt reset and state-save failure | P1 | S7 | `state.rs:107-138` |
 | R-010 | Harden loop detection: seeded hash over last N assistant outputs, not one unseeded hash | P1 | S8/S6 | `safety.rs:4-8`; `main.rs:167-179` |
 | R-011 | Persist nudge counters in state (or protect history) so caps survive history rotation/deletion | P1 | S7 | `nudge.rs:28-49` |
-| R-012 | Reset `busy` and surface an error on channel disconnect / worker panic | P1 | S6 | `main.rs:294-309,1326-1327` |
+| R-012 | DONE: catch_unwind in launch_tick surfaces worker panic in summary and resets busy; disconnect path also resets busy | P1 | S6 | `main.rs:294-309,1326-1327` |
 | R-013 | Clarify plain-language hold reasons in UI; expose remaining cap budget | P1 | S5/S4 | `main.rs:68-76,160-163` |
 | R-014 | GUI import validation parity with CLI + backup before overwrite + configurable export path | P1 | S5 | `main.rs:1207-1242` |
 | R-015 | Configurable cooldowns for missing/cap alerts (use `alert_cooldown_s`) | P1 | S6 | `main.rs:109,196` |
