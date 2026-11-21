@@ -1149,7 +1149,6 @@ fn main() {
     header.set_show_close_button(true);
     window.set_titlebar(Some(&header));
     let quit = icon_button("Quit", "window-close-symbolic");
-    quit.style_context().add_class("destructive-action");
     quit.connect_clicked(|_| gtk::main_quit());
     header.pack_end(&quit);
 
