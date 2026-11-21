@@ -42,3 +42,12 @@ fn save_then_load_preserves_session_fields() {
     assert!(!loaded.persist_notifications);
     std::fs::remove_file(path).ok();
 }
+
+#[test]
+fn states_differ_detects_changes() {
+    let a = session_keeper_rust::state::State::default();
+    let mut b = a.clone();
+    assert!(!session_keeper_rust::state::states_differ(&a, &b));
+    b.min_gap = 99;
+    assert!(session_keeper_rust::state::states_differ(&a, &b));
+}

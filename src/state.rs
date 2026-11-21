@@ -64,6 +64,8 @@ pub struct State {
     pub persist_notifications: bool,
     #[serde(default)]
     pub cap_alert_ms: i64,
+    #[serde(default)]
+    pub missing_alert_ms: i64,
 }
 
 impl Default for State {
@@ -81,6 +83,7 @@ impl Default for State {
             persist_dry_run: false,
             persist_notifications: true,
             cap_alert_ms: 0,
+            missing_alert_ms: 0,
         }
     }
 }
@@ -112,4 +115,8 @@ impl State {
         std::fs::write(&tmp, serde_json::to_string_pretty(self).unwrap_or_default())?;
         std::fs::rename(&tmp, path)
     }
+}
+
+pub fn states_differ(a: &State, b: &State) -> bool {
+    serde_json::to_string(a).unwrap_or_default() != serde_json::to_string(b).unwrap_or_default()
 }

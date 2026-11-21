@@ -6,7 +6,7 @@ use session_keeper_rust::config::Config;
 use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_exists, session_model, session_title, Status};
 use session_keeper_rust::nudge::{append_history, decide, fetch_models, log_line, notify, nudges_in_last_hour_all, send_nudge, switch_model, Decision, ModelInfo};
 use session_keeper_rust::process::{pid_alive, read_lock};
-use session_keeper_rust::state::{Session, State};
+use session_keeper_rust::state::{states_differ, Session, State};
 use session_keeper_rust::safety::{fingerprint, should_nudge_after_debounce};
 use session_keeper_rust::ui::{format_age, matches_filter, needs_attention, prompt_display, short_id, status_changed, status_class, status_priority, status_text, summary_line, CSS};
 use std::cell::{Cell, RefCell};
@@ -97,6 +97,16 @@ fn tick(state: &Rc<RefCell<State>>) -> String {
             let decision = decide(&st, s, &status, now);
             (status, decision)
         };
+
+        if !session_exists(&conn, &s.id) {
+            let last = state.borrow().missing_alert_ms;
+            if now - last > 3_600_000 {
+                notify("Session Keeper", &format!("Watched session {} is missing from OpenCode", short_id(&s.id)));
+                state.borrow_mut().missing_alert_ms = now;
+                let _ = state.borrow().save();
+                log_line(&format!("{}: alerted missing from opencode", s.id));
+            }
+        }
 
         let status_name = format!("{:?}", status);
         if status == Status::Waiting {
@@ -1098,7 +1108,11 @@ fn main() {
                     let label = if m.name.is_empty() { m.id.clone() } else { m.name.clone() };
                     combo.append(Some(&key), &format!("{} ({})", label, m.provider));
                 }
-                if !models.is_empty() { combo.set_active(Some(0)); }
+                if !models.is_empty() {
+                    combo.set_active(Some(0));
+                } else {
+                    dialog.content_area().add(&gtk::Label::new(Some("No models returned by OpenCode.")));
+                }
                 dialog.content_area().add(&combo);
                 dialog.show_all();
                 let sid2 = sid.clone();
@@ -1154,6 +1168,27 @@ fn main() {
                     Err(e) => summary_kick.set_label(&format!("Kick failed: {}", e)),
                 }
             }
+        }
+        glib::ControlFlow::Continue
+    });
+
+    let st_watch = state.clone();
+    let list_watch = list.clone();
+    let views_watch = views.clone();
+    let filter_watch = filter.clone();
+    let attention_watch = attention.clone();
+    let summary_watch = summary.clone();
+    glib::timeout_add_seconds_local(5, move || {
+        let disk = State::load();
+        let changed = {
+            let mem = st_watch.borrow();
+            states_differ(&mem, &disk)
+        };
+        if changed {
+            *st_watch.borrow_mut() = disk;
+            refresh(&st_watch, &list_watch, &views_watch, &filter_watch, &attention_watch);
+            summary_watch.set_label("State reloaded from disk");
+            log_line("state reloaded from disk (external edit)");
         }
         glib::ControlFlow::Continue
     });
