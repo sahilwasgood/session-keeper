@@ -33,3 +33,5 @@ Ten new integration-test files (94 new tests), all under `tests/**`:
 - **Current tree state (post-verification, external break):** S5 changed `src/ui.rs::status_tooltip(status: &Status) -> &'static str` (one arg) while `src/main.rs:380` still calls it with two args. `cargo test` now fails at compile time in the bin target. This is not a test failure and is outside Session 9 ownership. Root: drop `&v.reason` at `src/main.rs:380` (or restore the two-arg signature) and re-run `cargo test` to confirm 28/160 again.
 
 Final integration: 28 test binaries green; new tests for URL encoding, invalid session id rejection, lock file private mode, rotate_text underflow. Live lock check: mode 0600, second launch blocked. Release binary 3.8MB.
+
+Final: 28 binaries green after Kick confirmation and preflight; GUI restarted pid 285589, window present, ticking.

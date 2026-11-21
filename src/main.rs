@@ -526,28 +526,50 @@ fn refresh(
         let prompt_kick = s.prompt.clone().unwrap_or_default();
         let default_kick = default_prompt.clone();
         kick.connect_clicked(move |_| {
-            kick_cooldown.set_sensitive(false);
+            let dialog = gtk::Dialog::with_buttons(
+                Some("Kick now"),
+                None::<&gtk::Window>,
+                gtk::DialogFlags::MODAL,
+                &[("Cancel", gtk::ResponseType::Cancel), ("Kick", gtk::ResponseType::Ok)],
+            );
+            let label = gtk::Label::new(Some(
+                "Kick bypasses debounce, caps and question guards. Send the nudge now?",
+            ));
+            label.set_line_wrap(true);
+            dialog.content_area().add(&label);
+            dialog.show_all();
+
             let cool = kick_cooldown.clone();
-            glib::timeout_add_seconds_local(10, move || {
-                cool.set_sensitive(true);
-                glib::ControlFlow::Break
-            });
             let tx = match KICK_TX.get() { Some(t) => t.clone(), None => return };
             let sid = sid_kick.clone();
             let prompt = if prompt_kick.trim().is_empty() { default_kick.clone() } else { prompt_kick.clone() };
-            let api = Config::api_base();
-            let pw = Config::password();
-            std::thread::spawn(move || {
-                let result = if Config::dry_run() {
-                    Ok(())
-                } else {
-                    send_nudge(&api, &pw, &sid, &prompt)
-                };
-                if result.is_ok() && !Config::dry_run() {
-                    append_history(&sid, "nudge", &prompt);
-                    log_line(&format!("{}: kicked from UI", sid));
+            dialog.connect_response(move |dlg, resp| {
+                if resp == gtk::ResponseType::Ok {
+                    cool.set_sensitive(false);
+                    let cool2 = cool.clone();
+                    glib::timeout_add_seconds_local(10, move || {
+                        cool2.set_sensitive(true);
+                        glib::ControlFlow::Break
+                    });
+                    let sid2 = sid.clone();
+                    let prompt2 = prompt.clone();
+                    let tx2 = tx.clone();
+                    let api = Config::api_base();
+                    let pw = Config::password();
+                    std::thread::spawn(move || {
+                        let result = if Config::dry_run() {
+                            Ok(())
+                        } else {
+                            send_nudge(&api, &pw, &sid2, &prompt2)
+                        };
+                        if result.is_ok() && !Config::dry_run() {
+                            append_history(&sid2, "nudge", &prompt2);
+                            log_line(&format!("{}: kicked from UI", sid2));
+                        }
+                        let _ = tx2.send((sid2, result));
+                    });
                 }
-                let _ = tx.send((sid, result));
+                dlg.close();
             });
         });
         actions.add(&kick);
@@ -916,6 +938,22 @@ fn main() {
             return;
         }
         Mode::Gui => {}
+    }
+
+    if matches!(opts.mode, Mode::Gui) {
+        if std::env::var_os("DISPLAY").is_none() {
+            eprintln!("Session Keeper GUI needs a display. Set DISPLAY or use --watch in a terminal.");
+            return;
+        }
+        let notify_ok = std::process::Command::new("sh")
+            .arg("-c")
+            .arg("command -v notify-send >/dev/null 2>&1")
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !notify_ok {
+            log_line("notify-send not found; desktop alerts will not appear");
+        }
     }
 
     gtk::init().expect("GTK3 failed to initialize");
