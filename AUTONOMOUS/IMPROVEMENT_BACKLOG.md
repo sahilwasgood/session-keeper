@@ -1,6 +1,6 @@
 # Improvement Backlog
 
-1. DONE: AT-SPI/pyatspi harness verified Check now, Details dialog, Kick dialog, Save settings and dry-run kick. XTEST clicks still unreliable; use AT-SPI.
+1. DONE: AT-SPI/pyatspi harness verified Check now, Details, Kick, Save settings, dry-run kick, filter, sort toggle, Discover. XTEST clicks unreliable; use AT-SPI.
 2. DONE: Add validation and kick timestamp lookup moved off the GTK main thread; discovery and model fetch already worker-based.
 3. DONE: process-wide mutex serialises append+rotation (Session 6).
 4. Consider per-session vs global cap alert granularity (review finding M5).

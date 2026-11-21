@@ -46,3 +46,5 @@ Note: an earlier dry-run test before the env-propagation fix sent 2 real nudges 
 API response validation: 200 with malformed/non-object body now returns error instead of marking a nudge successful; regression test added. 28 binaries green.
 
 Human-input detection: permission/form endpoints probed live (both {"data":[]}); helper tests cover non-empty and empty arrays. Integrated into tick; 28 binaries green.
+
+AT-SPI regression pass: filter field reduced visible session cards 9 -> 1 -> 9; sort checkbox persisted via Save settings; Discover dialog opened and cancelled; Help expander present. Sort setting restored to false after test.
