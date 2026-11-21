@@ -35,3 +35,5 @@ Ten new integration-test files (94 new tests), all under `tests/**`:
 Final integration: 28 test binaries green; new tests for URL encoding, invalid session id rejection, lock file private mode, rotate_text underflow. Live lock check: mode 0600, second launch blocked. Release binary 3.8MB.
 
 Final: 28 binaries green after Kick confirmation and preflight; GUI restarted pid 285589, window present, ticking.
+
+CLI --sessions verified against live OpenCode API; session id/title parsing covered by tests.

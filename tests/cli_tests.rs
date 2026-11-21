@@ -137,3 +137,8 @@ fn set_setting_mode_parses_key_value() {
     ]));
     assert_eq!(o.mode, Mode::SetSetting("min_gap".to_string(), "25".to_string()));
 }
+
+#[test]
+fn sessions_mode() {
+    assert_eq!(parse_args(&args(&["session-keeper-rust", "--sessions"])).mode, Mode::Sessions);
+}

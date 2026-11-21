@@ -16,6 +16,7 @@ pub enum Mode {
     ExportState(String),
     ImportState(String),
     SetSetting(String, String),
+    Sessions,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,6 +43,7 @@ pub fn parse_args(args: &[String]) -> Options {
             "--check-now" => mode = Mode::CheckNow,
             "--status" => mode = Mode::Status,
             "--export-audit" => mode = Mode::ExportAudit,
+            "--sessions" => mode = Mode::Sessions,
             "--set-setting" => {
                 if i + 2 < args.len() && !args[i + 1].starts_with('-') {
                     mode = Mode::SetSetting(args[i + 1].clone(), args[i + 2].clone());

@@ -793,6 +793,12 @@ fn main() {
             }
             return;
         }
+        Mode::Sessions => {
+            for s in fetch_sessions(&Config::api_base(), &Config::password()) {
+                print_line(&format!("{}  {}", s.id, s.title));
+            }
+            return;
+        }
         Mode::SetSetting(key, value) => {
             let mut st = State::load();
             let parsed = match key.as_str() {
