@@ -10,6 +10,7 @@ fn default_max_nudges() -> i64 { 30 }
 fn default_global_cap() -> i64 { 60 }
 fn default_interval() -> i64 { 30 }
 fn default_true() -> bool { true }
+fn default_cooldown() -> i64 { 300 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
@@ -36,6 +37,10 @@ pub struct Session {
     pub last_status: String,
     #[serde(default)]
     pub last_alert_ms: i64,
+    #[serde(default)]
+    pub question_alert_ms: i64,
+    #[serde(default)]
+    pub stalled_alert_ms: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,6 +73,8 @@ pub struct State {
     pub missing_alert_ms: i64,
     #[serde(default)]
     pub sort_by_name: bool,
+    #[serde(default = "default_cooldown")]
+    pub alert_cooldown_s: i64,
 }
 
 impl Default for State {
@@ -87,6 +94,7 @@ impl Default for State {
             cap_alert_ms: 0,
             missing_alert_ms: 0,
             sort_by_name: false,
+            alert_cooldown_s: 300,
         }
     }
 }

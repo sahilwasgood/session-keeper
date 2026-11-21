@@ -17,6 +17,7 @@ fn save_then_load_preserves_session_fields() {
     let mut s = State::default();
     s.tick_interval_s = 15;
     s.global_nudge_cap = 12;
+    s.alert_cooldown_s = 600;
     s.persist_dry_run = true;
     s.persist_notifications = false;
     s.sessions.push(session_keeper_rust::state::Session {
@@ -27,6 +28,8 @@ fn save_then_load_preserves_session_fields() {
         prompted: 2000,
         last_nudge: 3000,
         nudges: 4,
+        question_alert_ms: 111,
+        stalled_alert_ms: 222,
         last_action: "nudged".to_string(), idle_streak: 0, last_hash: None, last_status: String::new(), last_alert_ms: 0,
     });
     let path = Path::new("/tmp/sk-roundtrip-state.json");
@@ -36,8 +39,11 @@ fn save_then_load_preserves_session_fields() {
     assert_eq!(loaded.sessions[0].id, "ses_test");
     assert_eq!(loaded.sessions[0].prompt.as_deref(), Some("go on"));
     assert_eq!(loaded.sessions[0].nudges, 4);
+    assert_eq!(loaded.sessions[0].question_alert_ms, 111);
+    assert_eq!(loaded.sessions[0].stalled_alert_ms, 222);
     assert_eq!(loaded.tick_interval_s, 15);
     assert_eq!(loaded.global_nudge_cap, 12);
+    assert_eq!(loaded.alert_cooldown_s, 600);
     assert!(loaded.persist_dry_run);
     assert!(!loaded.persist_notifications);
     std::fs::remove_file(path).ok();

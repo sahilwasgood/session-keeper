@@ -113,12 +113,13 @@ fn tick(state: &Rc<RefCell<State>>) -> String {
             let prev = state.borrow().sessions.iter().find(|x| x.id == s.id)
                 .map(|x| x.last_status.clone()).unwrap_or_default();
             let last_alert = state.borrow().sessions.iter().find(|x| x.id == s.id)
-                .map(|x| x.last_alert_ms).unwrap_or(0);
-            if status_changed(&prev, &status_name) && now - last_alert > 300_000 {
+                .map(|x| x.question_alert_ms).unwrap_or(0);
+            let cooldown = state.borrow().alert_cooldown_s * 1000;
+            if status_changed(&prev, &status_name) && now - last_alert > cooldown {
                 let title = session_title(&conn, &s.id);
                 notify("Session Keeper", &format!("{} asked a question", if title.is_empty() { &s.id } else { &title }));
                 if let Some(x) = state.borrow_mut().sessions.iter_mut().find(|x| x.id == s.id) {
-                    x.last_alert_ms = now;
+                    x.question_alert_ms = now;
                 }
                 log_line(&format!("{}: alerted waiting on question", s.id));
             }
@@ -127,12 +128,13 @@ fn tick(state: &Rc<RefCell<State>>) -> String {
             let prev = state.borrow().sessions.iter().find(|x| x.id == s.id)
                 .map(|x| x.last_status.clone()).unwrap_or_default();
             let last_alert = state.borrow().sessions.iter().find(|x| x.id == s.id)
-                .map(|x| x.last_alert_ms).unwrap_or(0);
-            if status_changed(&prev, &status_name) && now - last_alert > 300_000 {
+                .map(|x| x.stalled_alert_ms).unwrap_or(0);
+            let cooldown = state.borrow().alert_cooldown_s * 1000;
+            if status_changed(&prev, &status_name) && now - last_alert > cooldown {
                 let title = session_title(&conn, &s.id);
                 notify("Session Keeper", &format!("{} is stalled after a nudge", if title.is_empty() { &s.id } else { &title }));
                 if let Some(x) = state.borrow_mut().sessions.iter_mut().find(|x| x.id == s.id) {
-                    x.last_alert_ms = now;
+                    x.stalled_alert_ms = now;
                 }
                 log_line(&format!("{}: alerted stalled after nudge", s.id));
             }
@@ -782,6 +784,18 @@ fn main() {
             }
             match send_nudge(&Config::api_base(), &Config::password(), &sid, prompt) {
                 Ok(()) => {
+                    let mut st = State::load();
+                    let now = now_ms();
+                    let ts = open_db().map(|c| last_idle_ts(&c, &sid)).unwrap_or(now);
+                    if let Some(x) = st.sessions.iter_mut().find(|x| x.id == sid) {
+                        x.handled = ts;
+                        x.prompted = now;
+                        x.last_nudge = now;
+                        x.nudges += 1;
+                        x.idle_streak = 0;
+                        x.last_action = format!("kicked {}", session_keeper_rust::config::format_log_time(now / 1000));
+                    }
+                    let _ = st.save();
                     append_history(&sid, "nudge", prompt);
                     log_line(&format!("{}: kicked from CLI", sid));
                     print_line(&format!("Kicked {}", sid));
@@ -944,7 +958,7 @@ fn main() {
         } else {
             st_add.borrow_mut().sessions.push(Session {
                 id: sid, enabled: true, prompt: None, handled: 0, prompted: 0,
-                last_nudge: 0, nudges: 0, last_action: "added".to_string(), idle_streak: 0, last_hash: None, last_status: String::new(), last_alert_ms: 0,
+                last_nudge: 0, nudges: 0, last_action: "added".to_string(), idle_streak: 0, last_hash: None, last_status: String::new(), last_alert_ms: 0, question_alert_ms: 0, stalled_alert_ms: 0,
             });
             let _ = st_add.borrow().save();
             entry_add.set_text("");
@@ -1039,6 +1053,12 @@ fn main() {
         1.0, 0,
     );
     row3.add(&interval_spin);
+    row3.add(&gtk::Label::new(Some("Alert cooldown (s):")));
+    let cooldown_spin = gtk::SpinButton::new(
+        Some(&gtk::Adjustment::new(state.borrow().alert_cooldown_s as f64, 30.0, 3600.0, 30.0, 300.0, 0.0)),
+        1.0, 0,
+    );
+    row3.add(&cooldown_spin);
     settings_box.add(&row3);
 
     let enabled_cb = gtk::CheckButton::with_label("Watching enabled (global off switch)");
@@ -1074,6 +1094,7 @@ fn main() {
         st.persist_dry_run = dry_cb.is_active();
         st.persist_notifications = notify_cb.is_active();
         st.sort_by_name = sort_cb.is_active();
+        st.alert_cooldown_s = cooldown_spin.value() as i64;
         std::env::set_var("SESSION_KEEPER_DRY_RUN", if st.persist_dry_run { "1" } else { "0" });
         std::env::set_var("SESSION_KEEPER_NOTIFY", if st.persist_notifications { "1" } else { "0" });
         arm_timer(&st_settings, &tx_settings, &busy_settings, &timer_settings);
@@ -1300,12 +1321,28 @@ fn main() {
 
     let kick_rx_cell = Rc::new(RefCell::new(Some(kick_rx)));
     let summary_kick = summary.clone();
+    let st_kick_result = state.clone();
     glib::timeout_add_local(Duration::from_millis(200), move || {
         if let Some(r) = kick_rx_cell.borrow_mut().as_mut() {
             if let Ok((sid, result)) = r.try_recv() {
                 match result {
                     Ok(()) if Config::dry_run() => summary_kick.set_label(&format!("Dry-run kick for {}", short_id(&sid))),
-                    Ok(()) => summary_kick.set_label(&format!("Kicked {}", short_id(&sid))),
+                    Ok(()) => {
+                        let mut st = st_kick_result.borrow_mut();
+                        let now = now_ms();
+                        if let Some(x) = st.sessions.iter_mut().find(|x| x.id == sid) {
+                            let ts = open_db().map(|c| last_idle_ts(&c, &sid)).unwrap_or(now);
+                            x.handled = ts;
+                            x.prompted = now;
+                            x.last_nudge = now;
+                            x.nudges += 1;
+                            x.idle_streak = 0;
+                            x.last_action = format!("kicked {}", session_keeper_rust::config::format_log_time(now / 1000));
+                        }
+                        let _ = st.save();
+                        drop(st);
+                        summary_kick.set_label(&format!("Kicked {}", short_id(&sid)));
+                    }
                     Err(e) => summary_kick.set_label(&format!("Kick failed: {}", e)),
                 }
             }
