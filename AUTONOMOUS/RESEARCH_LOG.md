@@ -206,3 +206,5 @@ directly; no agent counts are fabricated. See SESSION_HANDOFFS/session-2-subagen
 4. (S6) Keep notify-send with urgency hints and no-daemon fallback; verify local man-page flags.
 5. (S1/S7) Verify exact OpenCode session-status / permission-state endpoints in openapi.json
    before any HTTP transport work; keep DB read path in the meantime.
+
+2026-11-22: verified /api/session/{id}/permission and /form response shape {"data":[...]}; used for precise human-input detection instead of text-only question heuristic.

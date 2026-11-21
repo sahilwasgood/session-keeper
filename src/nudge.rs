@@ -301,3 +301,27 @@ pub fn fetch_sessions(api: &str, password: &str) -> Vec<SessionInfo> {
         })
     }).collect()
 }
+
+fn api_json_array_nonempty(api: &str, password: &str, path: &str) -> bool {
+    let auth = format!("Basic {}", b64(format!("opencode:{}", password).as_bytes()));
+    let url = format!("{}{}", api.trim_end_matches('/'), path);
+    let resp = match ureq::get(&url)
+        .timeout(Duration::from_secs(5))
+        .set("Authorization", &auth)
+        .call()
+    {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+    let text = resp.into_string().unwrap_or_default();
+    match serde_json::from_str::<serde_json::Value>(&text) {
+        Ok(v) => v.get("data").and_then(|d| d.as_array()).map(|a| !a.is_empty()).unwrap_or(false),
+        Err(_) => false,
+    }
+}
+
+pub fn has_pending_human_input(api: &str, password: &str, sid: &str) -> bool {
+    let id = encode_segment(sid);
+    api_json_array_nonempty(api, password, &format!("/api/session/{}/permission", id))
+        || api_json_array_nonempty(api, password, &format!("/api/session/{}/form", id))
+}

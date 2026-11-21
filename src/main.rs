@@ -4,7 +4,7 @@ use rusqlite::{Connection, OpenFlags};
 use session_keeper_rust::cli::{parse_args, Mode, HELP};
 use session_keeper_rust::config::Config;
 use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_exists, session_model, session_title, Status};
-use session_keeper_rust::nudge::{append_history, decide, fetch_models, fetch_sessions, log_line, notify, nudges_in_last_hour_all, send_nudge, switch_model, Decision, ModelInfo, SessionInfo};
+use session_keeper_rust::nudge::{append_history, decide, fetch_models, fetch_sessions, has_pending_human_input, log_line, notify, nudges_in_last_hour_all, send_nudge, switch_model, Decision, ModelInfo, SessionInfo};
 use session_keeper_rust::process::create_lock;
 use session_keeper_rust::state::{apply_tick_fields, states_differ, GlobalTickFields, Session, State, TickFields};
 use session_keeper_rust::safety::{fingerprint, should_nudge_after_debounce};
@@ -100,7 +100,12 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
     for s in &sessions {
         let (status, decision) = {
             let st = state.borrow();
-            let status = classify(&conn, &s.id, &st);
+            let mut status = classify(&conn, &s.id, &st);
+            if status != Status::Clean
+                && has_pending_human_input(&Config::api_base(), &Config::password(), &s.id)
+            {
+                status = Status::Waiting;
+            }
             let decision = decide(&st, s, &status, now);
             (status, decision)
         };

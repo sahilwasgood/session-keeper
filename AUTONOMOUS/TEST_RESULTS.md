@@ -44,3 +44,5 @@ AT-SPI GUI verification: Check now added log lines; Details dialog opened and cl
 Note: an earlier dry-run test before the env-propagation fix sent 2 real nudges to watched sessions; fixed and retested safely.
 
 API response validation: 200 with malformed/non-object body now returns error instead of marking a nudge successful; regression test added. 28 binaries green.
+
+Human-input detection: permission/form endpoints probed live (both {"data":[]}); helper tests cover non-empty and empty arrays. Integrated into tick; 28 binaries green.

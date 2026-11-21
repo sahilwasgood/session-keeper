@@ -106,3 +106,19 @@ fn malformed_success_body_is_not_a_success() {
     );
     assert!(result.is_err(), "malformed 200 body must be rejected: {:?}", result);
 }
+
+#[test]
+fn pending_permission_detects_human_input() {
+    let body = r#"{"data":[{"id":"perm1"}]}"#;
+    let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+    let (api, _rx) = scripted(vec![response]);
+    assert!(session_keeper_rust::nudge::has_pending_human_input(&api, "pw", "ses_x"));
+}
+
+#[test]
+fn empty_permission_means_no_human_input() {
+    let body = r#"{"data":[]}"#;
+    let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+    let (api, _rx) = scripted(vec![response]);
+    assert!(!session_keeper_rust::nudge::has_pending_human_input(&api, "pw", "ses_x"));
+}
