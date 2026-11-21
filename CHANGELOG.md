@@ -11,6 +11,7 @@
 - Worker panic and channel-disconnect recovery; consistent CLI exit codes for unknown sessions.
 - Broader question detection (trailing whitespace and fullwidth mark), missing notify-send detection, and a neutral Quit button.
 - Loop detection now catches A->B->A output oscillation in addition to unchanged output.
+- State import now saves a timestamped backup of the previous state before overwriting.
 
 ## v0.1.0 (2026-11-22)
 

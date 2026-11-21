@@ -923,6 +923,9 @@ fn main() {
                     std::process::exit(1);
                 }
             };
+            if let Some(backup) = session_keeper_rust::state::backup_state() {
+                println!("Backup saved to {}", backup.display());
+            }
             if let Err(e) = imported.save() {
                 eprintln!("State import failed: {}", e);
                 std::process::exit(1);
@@ -1454,9 +1457,11 @@ fn main() {
             .and_then(|s| State::from_json(&s).ok())
         {
             Some(new_state) => {
+                let backup = session_keeper_rust::state::backup_state();
                 *st_import.borrow_mut() = new_state;
                 let _ = st_import.borrow().save();
-                summary_import.set_label(&format!("Imported from {}", path.display()));
+                summary_import.set_label(&format!("Imported from {}{}", path.display(),
+                    backup.map(|b| format!(" (backup: {})", b.display())).unwrap_or_default()));
                 refresh(&st_import, &list_import, &views_import, &filter_import, &attention_import);
             }
             None => summary_import.set_label("Import failed: no valid export file"),

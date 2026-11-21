@@ -12,6 +12,21 @@ pub fn state_was_corrupt() -> bool {
     CORRUPT_LOAD.get().is_some()
 }
 
+/// Copy the current state file to a timestamped backup before an import
+/// overwrites it. Returns the backup path when one was created.
+pub fn backup_state() -> Option<std::path::PathBuf> {
+    let path = Config::state_path();
+    if !path.exists() {
+        return None;
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let backup = path.with_extension(format!("bak-{}", stamp));
+    std::fs::copy(&path, &backup).ok().map(|_| backup)
+}
+
 fn default_enabled() -> bool { true }
 fn default_prompt() -> String { "continue, dont stop".to_string() }
 fn default_min_gap() -> i64 { 10 }

@@ -80,3 +80,5 @@ Preflight: GUI and --watch modes log DB/credentials/notify transport status with
 R-013 partial: tick outcome carries cap_remaining (computed from global cap and hourly history); GUI status line shows "global cap N left" (verified via AT-SPI: 54 left), omitted when unknown/unlimited. 31 binaries green.
 
 R-010: loop detection now catches A->B->A via Session.prev_hash (serde default, migrates old state) and safety::is_repeating_output, with unit test for A->A/A->B->A/non-loop cases. Live app shows no false loop holds; 31 binaries green.
+
+R-014 partial: both CLI and GUI state import now call state::backup_state(), producing a timestamped state.bak-<ms> file; CLI prints its path, GUI shows it in the summary. Verified with isolated import; 31 binaries green.

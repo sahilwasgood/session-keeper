@@ -120,3 +120,16 @@ fn invalid_session_ids_are_rejected() {
     assert_eq!(st.sessions.len(), 1);
     assert_eq!(st.sessions[0].id, "ses_ok");
 }
+
+#[test]
+fn import_backup_preserves_previous_state() {
+    let d = std::env::temp_dir().join(format!("sk-bak-{}-{}", std::process::id(), 1));
+    let _ = std::fs::create_dir_all(&d);
+    let state = d.join("state.json");
+    std::fs::write(&state, r#"{"sessions":[{"id":"ses_keep"}]}"#).unwrap();
+    std::env::set_var("SESSION_KEEPER_STATE", &state);
+    let backup = session_keeper_rust::state::backup_state().expect("backup expected");
+    assert!(backup.exists());
+    assert_eq!(std::fs::read_to_string(&backup).unwrap(), std::fs::read_to_string(&state).unwrap());
+    std::fs::remove_dir_all(&d).ok();
+}
