@@ -210,3 +210,5 @@ directly; no agent counts are fabricated. See SESSION_HANDOFFS/session-2-subagen
 2026-11-22: verified /api/session/{id}/permission and /form response shape {"data":[...]}; used for precise human-input detection instead of text-only question heuristic.
 
 2026-11-22: verified /api/event accepts repeated `types=` query parameters; comma-separated list returns 400. Watcher now filters server-side.
+
+2026-11-22: verified OpenCode server default port is 4096 and default data/config paths are ~/.local/share/opencode/opencode.db and ~/.config/opencode/service.json (dev.opencode.ai/docs/server). Session Keeper defaults changed to match.
