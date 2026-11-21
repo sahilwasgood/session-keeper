@@ -188,10 +188,14 @@ pub fn send_nudge_with_timeout(
         .set("Content-Type", "application/json")
         .send_string(&body)
         .map_err(|e| format!("{}", e))?;
-    if (200..300).contains(&resp.status()) {
-        Ok(())
-    } else {
-        Err(format!("HTTP {}", resp.status()))
+    if !(200..300).contains(&resp.status()) {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    let text = resp.into_string().unwrap_or_default();
+    match serde_json::from_str::<serde_json::Value>(&text) {
+        Ok(value) if value.is_object() => Ok(()),
+        Ok(_) => Err("API returned non-object response".to_string()),
+        Err(_) => Err("API returned malformed JSON".to_string()),
     }
 }
 

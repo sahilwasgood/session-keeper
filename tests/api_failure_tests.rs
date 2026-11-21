@@ -6,7 +6,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 fn reply(status: &str) -> String {
-    format!("HTTP/1.1 {}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", status)
+    format!("HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}", status)
 }
 
 fn scripted(responses: Vec<String>) -> (String, mpsc::Receiver<usize>) {
@@ -95,4 +95,14 @@ fn hung_server_times_out() {
     );
     assert!(result.is_err(), "hung server must fail: {:?}", result);
     assert!(start.elapsed() < Duration::from_millis(1500), "took {:?}", start.elapsed());
+}
+
+#[test]
+fn malformed_success_body_is_not_a_success() {
+    let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 8\r\nConnection: close\r\n\r\nnot json".to_string();
+    let (api, _rx) = scripted(vec![response]);
+    let result = session_keeper_rust::nudge::send_nudge_with_timeout(
+        &api, "pw", "ses_x", "continue", std::time::Duration::from_millis(2000),
+    );
+    assert!(result.is_err(), "malformed 200 body must be rejected: {:?}", result);
 }
