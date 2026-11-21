@@ -6,7 +6,7 @@ use session_keeper_rust::config::Config;
 use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_exists, session_model, session_title, Status};
 use session_keeper_rust::nudge::{append_history, decide, fetch_models, log_line, notify, nudges_in_last_hour_all, send_nudge, switch_model, Decision, ModelInfo};
 use session_keeper_rust::process::{pid_alive, read_lock};
-use session_keeper_rust::state::{states_differ, Session, State};
+use session_keeper_rust::state::{apply_tick_fields, states_differ, GlobalTickFields, Session, State, TickFields};
 use session_keeper_rust::safety::{fingerprint, should_nudge_after_debounce};
 use session_keeper_rust::ui::{format_age, history_for_sid, matches_filter, needs_attention, prompt_display, short_id, sort_key, status_changed, status_class, status_text, summary_line, CSS};
 use std::cell::{Cell, RefCell};
@@ -33,7 +33,8 @@ struct SessionView {
 
 struct TickOutcome {
     summary: String,
-    state: State,
+    updates: Vec<TickFields>,
+    globals: GlobalTickFields,
     views: HashMap<String, SessionView>,
 }
 
@@ -74,14 +75,18 @@ fn reason(status: &Status) -> &'static str {
     }
 }
 
-fn tick(state: &Rc<RefCell<State>>) -> String {
+fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, GlobalTickFields) {
     let now = now_ms();
     let conn = match open_db() {
         Some(c) => c,
         None => {
             let msg = "Watchdog paused: drive or database unavailable".to_string();
             log_line(&msg);
-            return msg;
+            return (msg, Vec::new(), GlobalTickFields {
+                last_tick_ms: now_ms(),
+                cap_alert_ms: state.borrow().cap_alert_ms,
+                missing_alert_ms: state.borrow().missing_alert_ms,
+            });
         }
     };
     let sessions: Vec<Session> = state.borrow().sessions.clone();
@@ -103,7 +108,7 @@ fn tick(state: &Rc<RefCell<State>>) -> String {
             if now - last > 3_600_000 {
                 notify("Session Keeper", &format!("Watched session {} is missing from OpenCode", short_id(&s.id)));
                 state.borrow_mut().missing_alert_ms = now;
-                let _ = state.borrow().save();
+                if persist { let _ = state.borrow().save(); }
                 log_line(&format!("{}: alerted missing from opencode", s.id));
             }
         }
@@ -236,14 +241,33 @@ fn tick(state: &Rc<RefCell<State>>) -> String {
     }
 
     state.borrow_mut().last_tick_ms = now;
-    let _ = state.borrow().save();
-    summary_line(&session_keeper_rust::config::format_log_time(now / 1000), nudged, held)
+    if persist { let _ = state.borrow().save(); }
+    let updates = state.borrow().sessions.iter().map(|s| TickFields {
+        id: s.id.clone(),
+        handled: s.handled,
+        prompted: s.prompted,
+        last_nudge: s.last_nudge,
+        nudges: s.nudges,
+        idle_streak: s.idle_streak,
+        last_hash: s.last_hash.clone(),
+        last_action: s.last_action.clone(),
+        last_status: s.last_status.clone(),
+        last_alert_ms: s.last_alert_ms,
+        question_alert_ms: s.question_alert_ms,
+        stalled_alert_ms: s.stalled_alert_ms,
+    }).collect();
+    let globals = GlobalTickFields {
+        last_tick_ms: now,
+        cap_alert_ms: state.borrow().cap_alert_ms,
+        missing_alert_ms: state.borrow().missing_alert_ms,
+    };
+    (summary_line(&session_keeper_rust::config::format_log_time(now / 1000), nudged, held), updates, globals)
 }
 
-fn run_tick(snapshot: State) -> TickOutcome {
+fn run_tick(snapshot: State, persist: bool) -> TickOutcome {
     // Runs on a worker thread. No GTK calls here.
     let st = Rc::new(RefCell::new(snapshot));
-    let summary = tick(&st);
+    let (summary, updates, globals) = tick(&st, persist);
     let mut views = HashMap::new();
     if let Some(conn) = open_db() {
         for s in st.borrow().sessions.iter() {
@@ -260,8 +284,7 @@ fn run_tick(snapshot: State) -> TickOutcome {
             views.insert(s.id.clone(), view);
         }
     }
-    let final_state = st.borrow().clone();
-    TickOutcome { summary, state: final_state, views }
+    TickOutcome { summary, updates, globals, views }
 }
 
 fn launch_tick(
@@ -276,7 +299,7 @@ fn launch_tick(
     let snapshot = state.borrow().clone();
     let tx = tx.clone();
     std::thread::spawn(move || {
-        let outcome = run_tick(snapshot);
+        let outcome = run_tick(snapshot, false);
         let _ = tx.send(outcome);
     });
 }
@@ -636,12 +659,34 @@ impl Drop for LockGuard {
 fn main() {
     let raw: Vec<String> = std::env::args().collect();
     let opts = parse_args(&raw);
+    let boot_state = State::load();
+    if !opts.explicit_dry {
+        std::env::set_var(
+            "SESSION_KEEPER_DRY_RUN",
+            if boot_state.persist_dry_run { "1" } else { "0" },
+        );
+    }
     if opts.dry_run {
         std::env::set_var("SESSION_KEEPER_DRY_RUN", "1");
     }
+    std::env::set_var(
+        "SESSION_KEEPER_NOTIFY",
+        if boot_state.persist_notifications { "1" } else { "0" },
+    );
     let resume_mode = matches!(&opts.mode, Mode::Resume(_));
     let lock_path = Config::lock_path();
-    let lock_needed = matches!(opts.mode, Mode::Gui | Mode::CheckNow | Mode::Watch);
+    let lock_needed = matches!(
+        opts.mode,
+        Mode::Gui
+            | Mode::CheckNow
+            | Mode::Watch
+            | Mode::Kick(_)
+            | Mode::SetModel(..)
+            | Mode::Pause(_)
+            | Mode::Resume(_)
+            | Mode::SetPrompt(..)
+            | Mode::ImportState(_)
+    );
     if lock_needed {
         if let Some(pid) = read_lock(&lock_path) {
             if pid_alive(pid) && pid != std::process::id() as i32 {
@@ -662,7 +707,7 @@ fn main() {
         }
         Mode::CheckNow => {
             let st = Rc::new(RefCell::new(State::load()));
-            let out = run_tick(st.borrow().clone());
+            let out = run_tick(st.borrow().clone(), true);
             print_line(&format!("{}", out.summary));
             return;
         }
@@ -743,7 +788,7 @@ fn main() {
             print_line(&format!("Watching {} sessions, tick every {}s (Ctrl+C to stop)", st.sessions.len(), interval));
             loop {
                 let current = State::load();
-                let out = run_tick(current);
+                let out = run_tick(current, true);
                 print_line(&format!("{}", out.summary));
                 for (sid, view) in out.views {
                     print_line(&format!("  {} {} {}", short_id(&sid), status_text(&view.status), view.reason));
@@ -875,12 +920,7 @@ fn main() {
         );
     }
 
-    let state = Rc::new(RefCell::new(State::load()));
-    if !opts.dry_run {
-        let st = state.borrow();
-        std::env::set_var("SESSION_KEEPER_DRY_RUN", if st.persist_dry_run { "1" } else { "0" });
-        std::env::set_var("SESSION_KEEPER_NOTIFY", if st.persist_notifications { "1" } else { "0" });
-    }
+    let state = Rc::new(RefCell::new(boot_state));
     let views: Rc<RefCell<HashMap<String, SessionView>>> = Rc::new(RefCell::new(HashMap::new()));
     let filter: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
     let attention: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
@@ -1108,21 +1148,27 @@ fn main() {
     let busy_settings = busy.clone();
     let timer_settings = timer.clone();
     save_settings.connect_clicked(move |_| {
-        let mut st = st_settings.borrow_mut();
         let p = def_prompt.text().trim().to_string();
-        st.default_prompt = if p.is_empty() { "continue, dont stop".to_string() } else { p };
-        st.min_gap = min_gap.value() as i64;
-        st.max_nudges_per_hour = cap.value() as i64;
-        st.away_mode = away.is_active();
-        st.global_nudge_cap = global_cap.value() as i64;
-        st.enabled = enabled_cb.is_active();
-        let _ = st.save();
-        st.persist_dry_run = dry_cb.is_active();
-        st.persist_notifications = notify_cb.is_active();
-        st.sort_by_name = sort_cb.is_active();
-        st.alert_cooldown_s = cooldown_spin.value() as i64;
-        std::env::set_var("SESSION_KEEPER_DRY_RUN", if st.persist_dry_run { "1" } else { "0" });
-        std::env::set_var("SESSION_KEEPER_NOTIFY", if st.persist_notifications { "1" } else { "0" });
+        let default_prompt = if p.is_empty() { "continue, dont stop".to_string() } else { p };
+        let dry = dry_cb.is_active();
+        let notify = notify_cb.is_active();
+        {
+            let mut st = st_settings.borrow_mut();
+            st.default_prompt = default_prompt;
+            st.min_gap = min_gap.value() as i64;
+            st.max_nudges_per_hour = cap.value() as i64;
+            st.away_mode = away.is_active();
+            st.global_nudge_cap = global_cap.value() as i64;
+            st.enabled = enabled_cb.is_active();
+            st.persist_dry_run = dry;
+            st.persist_notifications = notify;
+            st.sort_by_name = sort_cb.is_active();
+            st.alert_cooldown_s = cooldown_spin.value() as i64;
+            st.tick_interval_s = interval_spin.value() as i64;
+            let _ = st.save();
+        }
+        std::env::set_var("SESSION_KEEPER_DRY_RUN", if dry { "1" } else { "0" });
+        std::env::set_var("SESSION_KEEPER_NOTIFY", if notify { "1" } else { "0" });
         arm_timer(&st_settings, &tx_settings, &busy_settings, &timer_settings);
     });
     settings_box.add(&save_settings);
@@ -1255,7 +1301,11 @@ fn main() {
         if let Some(r) = guard.as_mut() {
             match r.try_recv() {
                 Ok(outcome) => {
-                    *st_ui.borrow_mut() = outcome.state;
+                    {
+                        let mut st = st_ui.borrow_mut();
+                        apply_tick_fields(&mut st, &outcome.updates, outcome.globals);
+                        let _ = st.save();
+                    }
                     *views_ui.borrow_mut() = outcome.views;
                     let watched = st_ui.borrow().sessions.len();
                     let attention = views_ui.borrow().values().filter(|v| needs_attention(&v.status)).count();

@@ -50,9 +50,14 @@ pub fn nudges_in_last_hour_all(now_ms: i64) -> i64 {
 
 pub fn notify(title: &str, message: &str) {
     if !Config::notifications() { return; }
-    let _ = std::process::Command::new("notify-send")
-        .arg(title).arg(message)
-        .spawn();
+    if let Ok(child) = std::process::Command::new("notify-send")
+        .arg(title)
+        .arg(message)
+        .spawn()
+    {
+        // Reap the helper so repeated alerts do not leave zombies.
+        std::thread::spawn(move || { let mut child = child; let _ = child.wait(); });
+    }
 }
 
 pub fn decide_with_history(
@@ -190,6 +195,12 @@ pub fn log_line(message: &str) {
         .open(Config::log_path())
     {
         let _ = writeln!(f, "{} {}", crate::config::format_log_time(now), message);
+    }
+    if let Ok(text) = std::fs::read_to_string(Config::log_path()) {
+        let rotated = rotate_text(&text, 2000, 1000);
+        if rotated != text {
+            let _ = std::fs::write(Config::log_path(), rotated);
+        }
     }
 }
 

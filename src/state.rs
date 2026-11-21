@@ -12,7 +12,7 @@ fn default_interval() -> i64 { 30 }
 fn default_true() -> bool { true }
 fn default_cooldown() -> i64 { 300 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Session {
     pub id: String,
     #[serde(default = "default_enabled")]
@@ -112,7 +112,15 @@ impl State {
                 s.sessions.retain(|x| !x.id.is_empty());
                 s
             }
-            Err(_) => State::default(),
+            Err(_) => {
+                let stamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let backup = std::path::PathBuf::from(format!("{}.corrupt-{}", path.display(), stamp));
+                let _ = std::fs::copy(path, backup);
+                State::default()
+            }
         }
     }
 
@@ -130,4 +138,48 @@ impl State {
 
 pub fn states_differ(a: &State, b: &State) -> bool {
     serde_json::to_string(a).unwrap_or_default() != serde_json::to_string(b).unwrap_or_default()
+}
+
+#[derive(Debug, Clone)]
+pub struct TickFields {
+    pub id: String,
+    pub handled: i64,
+    pub prompted: i64,
+    pub last_nudge: i64,
+    pub nudges: i64,
+    pub idle_streak: i32,
+    pub last_hash: Option<String>,
+    pub last_action: String,
+    pub last_status: String,
+    pub last_alert_ms: i64,
+    pub question_alert_ms: i64,
+    pub stalled_alert_ms: i64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct GlobalTickFields {
+    pub last_tick_ms: i64,
+    pub cap_alert_ms: i64,
+    pub missing_alert_ms: i64,
+}
+
+pub fn apply_tick_fields(state: &mut State, updates: &[TickFields], globals: GlobalTickFields) {
+    for u in updates {
+        if let Some(s) = state.sessions.iter_mut().find(|s| s.id == u.id) {
+            s.handled = u.handled;
+            s.prompted = u.prompted;
+            s.last_nudge = u.last_nudge;
+            s.nudges = u.nudges;
+            s.idle_streak = u.idle_streak;
+            s.last_hash = u.last_hash.clone();
+            s.last_action = u.last_action.clone();
+            s.last_status = u.last_status.clone();
+            s.last_alert_ms = u.last_alert_ms;
+            s.question_alert_ms = u.question_alert_ms;
+            s.stalled_alert_ms = u.stalled_alert_ms;
+        }
+    }
+    state.last_tick_ms = globals.last_tick_ms;
+    state.cap_alert_ms = globals.cap_alert_ms;
+    state.missing_alert_ms = globals.missing_alert_ms;
 }

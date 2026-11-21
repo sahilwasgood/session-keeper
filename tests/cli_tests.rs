@@ -114,3 +114,18 @@ fn import_state_mode_with_path() {
     let bad = parse_args(&args(&["session-keeper-rust", "--import-state"]));
     assert_eq!(bad.mode, Mode::Help);
 }
+
+#[test]
+fn explicit_dry_run_is_tracked() {
+    let o = parse_args(&args(&["session-keeper-rust", "--kick", "ses_a", "--dry-run"]));
+    assert!(o.dry_run);
+    assert!(o.explicit_dry);
+    let p = parse_args(&args(&["session-keeper-rust", "--status"]));
+    assert!(!p.explicit_dry);
+}
+
+#[test]
+fn kick_does_not_consume_a_flag_as_session_id() {
+    let o = parse_args(&args(&["session-keeper-rust", "--kick", "--dry-run"]));
+    assert_eq!(o.mode, Mode::Help);
+}

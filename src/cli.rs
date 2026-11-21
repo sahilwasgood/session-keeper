@@ -22,12 +22,14 @@ pub struct Options {
     pub mode: Mode,
     pub dry_run: bool,
     pub json: bool,
+    pub explicit_dry: bool,
 }
 
 pub fn parse_args(args: &[String]) -> Options {
     let mut mode = Mode::Gui;
     let mut dry_run = false;
     let mut json = false;
+    let mut explicit_dry = false;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -38,7 +40,7 @@ pub fn parse_args(args: &[String]) -> Options {
             "--version" => mode = Mode::Version,
             "--export-state" | "--import-state" => {
                 let flag = args[i].clone();
-                if i + 1 < args.len() {
+                if i + 1 < args.len() && !args[i + 1].starts_with('-') {
                     mode = if flag == "--export-state" {
                         Mode::ExportState(args[i + 1].clone())
                     } else {
@@ -66,14 +68,14 @@ pub fn parse_args(args: &[String]) -> Options {
                 };
                 i += need;
             }
-            "--dry-run" => dry_run = true,
+            "--dry-run" => { dry_run = true; explicit_dry = true; },
             "--json" => json = true,
             "--help" | "-h" => {
                 mode = Mode::Help;
                 break;
             }
             "--kick" => {
-                if i + 1 < args.len() {
+                if i + 1 < args.len() && !args[i + 1].starts_with('-') {
                     mode = Mode::Kick(args[i + 1].clone());
                     i += 1;
                 } else {
@@ -109,7 +111,7 @@ pub fn parse_args(args: &[String]) -> Options {
         }
         i += 1;
     }
-    Options { mode, dry_run, json }
+    Options { mode, dry_run, json, explicit_dry }
 }
 
 pub const HELP: &str = "Session Keeper\nUsage: session-keeper-rust [options]\n\nOptions:\n  (none)                       Open the window and run the watchdog while it is open\n  --check-now                  Run one watchdog tick in the terminal and exit\n  --status                     Print session statuses and exit\n  --kick <session-id>          Send the nudge prompt to one session now\n  --models [filter]            List available models, optionally filtered\n  --set-model <sid> <id> <provider>   Switch one session's model\n  --pause <sid>                Pause one session

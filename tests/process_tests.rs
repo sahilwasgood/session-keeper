@@ -19,3 +19,8 @@ fn lock_file_parsing() {
     assert_eq!(read_lock(path), None);
     std::fs::remove_file(path).ok();
 }
+
+#[test]
+fn unrelated_pid_is_not_a_keeper() {
+    assert!(!pid_alive(1));
+}
