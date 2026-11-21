@@ -38,3 +38,13 @@ fn status_change_detection() {
     assert!(session_keeper_rust::ui::status_changed("working", "waiting"));
     assert!(!session_keeper_rust::ui::status_changed("waiting", "waiting"));
 }
+
+#[test]
+fn rotate_keeps_recent_lines() {
+    let text = (0..3000).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n");
+    let out = session_keeper_rust::nudge::rotate_text(&text, 2000, 1000);
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.len(), 1000);
+    assert_eq!(lines[0], "line 2000");
+    assert_eq!(lines[999], "line 2999");
+}

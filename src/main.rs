@@ -406,10 +406,17 @@ fn refresh(
         actions.add(&model_btn);
 
         let kick = icon_button("Kick", "mail-send-symbolic");
+        let kick_cooldown = kick.clone();
         let sid_kick = s.id.clone();
         let prompt_kick = s.prompt.clone().unwrap_or_default();
         let default_kick = default_prompt.clone();
         kick.connect_clicked(move |_| {
+            kick_cooldown.set_sensitive(false);
+            let cool = kick_cooldown.clone();
+            glib::timeout_add_seconds_local(10, move || {
+                cool.set_sensitive(true);
+                glib::ControlFlow::Break
+            });
             let tx = match KICK_TX.get() { Some(t) => t.clone(), None => return };
             let sid = sid_kick.clone();
             let prompt = if prompt_kick.trim().is_empty() { default_kick.clone() } else { prompt_kick.clone() };
@@ -501,6 +508,14 @@ fn edit_prompt(
     });
 }
 
+fn write_audit() -> std::io::Result<std::path::PathBuf> {
+    let history = tail_file(&Config::history_path(), 1000);
+    let log = tail_file(&Config::log_path(), 1000);
+    let text = format!("=== NUDGE HISTORY ===\n{}\n=== KEEPER LOG ===\n{}\n", history, log);
+    std::fs::write(Config::audit_path(), &text)?;
+    Ok(Config::audit_path())
+}
+
 fn arm_timer(
     state: &Rc<RefCell<State>>,
     tx: &Sender<TickOutcome>,
@@ -552,6 +567,16 @@ fn main() {
                 let status = conn.as_ref().map(|c| classify(c, &s.id, &st)).unwrap_or(Status::Clean);
                 println!("{}  {}  {}  nudges={}  last={}", short_id(&s.id), s.id,
                     status_text(&status), s.nudges, s.last_action);
+            }
+            return;
+        }
+        Mode::ExportAudit => {
+            match write_audit() {
+                Ok(path) => println!("Audit written to {}", path.display()),
+                Err(e) => {
+                    eprintln!("Audit export failed: {}", e);
+                    std::process::exit(1);
+                }
             }
             return;
         }
@@ -657,6 +682,7 @@ fn main() {
     let _ = KICK_TX.set(kick_tx.clone());
     let model_cache: Rc<RefCell<HashMap<String, Vec<ModelInfo>>>> = Rc::new(RefCell::new(HashMap::new()));
 
+    let filter_entry = gtk::Entry::new();
     let window = gtk::Window::new(gtk::WindowType::Toplevel);
     window.set_title("Session Keeper");
     window.set_default_size(960, 680);
@@ -665,16 +691,26 @@ fn main() {
     let st_key = state.clone();
     let tx_key = tx.clone();
     let busy_key = busy.clone();
+    let filter_key = filter_entry.clone();
     window.connect_key_press_event(move |_, key| {
         use gtk::gdk::keys::constants;
         if key.keyval() == constants::F5 {
             launch_tick(&st_key, &tx_key, &busy_key);
             return glib::Propagation::Stop;
         }
-        if key.keyval() == constants::q
-            && key.state().contains(gtk::gdk::ModifierType::CONTROL_MASK)
-        {
+        let ctrl = key.state().contains(gtk::gdk::ModifierType::CONTROL_MASK);
+        if ctrl && key.keyval() == constants::q {
             gtk::main_quit();
+            return glib::Propagation::Stop;
+        }
+        if ctrl && key.keyval() == constants::f {
+            filter_key.grab_focus();
+            return glib::Propagation::Stop;
+        }
+        if ctrl && key.keyval() == constants::e {
+            if let Err(e) = write_audit() {
+                log_line(&format!("audit export failed: {}", e));
+            }
             return glib::Propagation::Stop;
         }
         glib::Propagation::Proceed
@@ -710,7 +746,6 @@ fn main() {
     entry.set_hexpand(true);
     controls.add(&entry);
 
-    let filter_entry = gtk::Entry::new();
     filter_entry.set_placeholder_text(Some("Filter sessions..."));
     filter_entry.set_width_chars(18);
     controls.add(&filter_entry);
@@ -923,6 +958,19 @@ fn main() {
         }
     });
     io_row.add(&import_btn);
+    let reload_btn = icon_button("Reload from disk", "view-refresh-symbolic");
+    let st_reload = state.clone();
+    let list_reload = list.clone();
+    let views_reload = views.clone();
+    let filter_reload = filter.clone();
+    let attention_reload = attention.clone();
+    let summary_reload = summary.clone();
+    reload_btn.connect_clicked(move |_| {
+        *st_reload.borrow_mut() = State::load();
+        refresh(&st_reload, &list_reload, &views_reload, &filter_reload, &attention_reload);
+        summary_reload.set_label("Settings reloaded from disk");
+    });
+    io_row.add(&reload_btn);
     settings_box.add(&io_row);
     settings.add(&settings_box);
     outer.add(&settings);
@@ -939,12 +987,8 @@ fn main() {
     diag_box.add(&digest);
     let audit_btn = icon_button("Export audit (history + log)", "document-save-as-symbolic");
     audit_btn.connect_clicked(|_| {
-        let history = tail_file(&Config::history_path(), 1000);
-        let log = tail_file(&Config::log_path(), 1000);
-        let text = format!("=== NUDGE HISTORY ===\n{}\n=== KEEPER LOG ===\n{}\n", history, log);
-        match std::fs::write(Config::audit_path(), &text) {
-            Ok(()) => {}
-            Err(e) => log_line(&format!("audit export failed: {}", e)),
+        if let Err(e) = write_audit() {
+            log_line(&format!("audit export failed: {}", e));
         }
     });
     diag_box.add(&audit_btn);

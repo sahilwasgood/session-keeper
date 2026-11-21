@@ -163,12 +163,19 @@ pub fn append_history(sid: &str, kind: &str, detail: &str) {
         let _ = writeln!(f, "{}", line);
     }
     if let Ok(text) = std::fs::read_to_string(&path) {
-        let all: Vec<&str> = text.lines().collect();
-        if all.len() > 1000 {
-            let tail = all[all.len() - 500..].join("\n") + "\n";
-            let _ = std::fs::write(&path, tail);
+        let rotated = rotate_text(&text, 2000, 1000);
+        if rotated != text {
+            let _ = std::fs::write(&path, rotated);
         }
     }
+}
+
+pub fn rotate_text(text: &str, max: usize, keep: usize) -> String {
+    let all: Vec<&str> = text.lines().collect();
+    if all.len() <= max {
+        return text.to_string();
+    }
+    all[all.len() - keep..].join("\n") + "\n"
 }
 
 pub fn log_line(message: &str) {

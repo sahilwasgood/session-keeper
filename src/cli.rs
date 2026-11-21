@@ -7,6 +7,7 @@ pub enum Mode {
     Kick(String),
     Models(Option<String>),
     SetModel(String, String, String),
+    ExportAudit,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +24,7 @@ pub fn parse_args(args: &[String]) -> Options {
         match args[i].as_str() {
             "--check-now" => mode = Mode::CheckNow,
             "--status" => mode = Mode::Status,
+            "--export-audit" => mode = Mode::ExportAudit,
             "--dry-run" => dry_run = true,
             "--help" | "-h" => {
                 mode = Mode::Help;
@@ -68,4 +70,5 @@ pub fn parse_args(args: &[String]) -> Options {
     Options { mode, dry_run }
 }
 
-pub const HELP: &str = "Session Keeper\nUsage: session-keeper-rust [options]\n\nOptions:\n  (none)                       Open the window and run the watchdog while it is open\n  --check-now                  Run one watchdog tick in the terminal and exit\n  --status                     Print session statuses and exit\n  --kick <session-id>          Send the nudge prompt to one session now\n  --models [filter]            List available models, optionally filtered\n  --set-model <sid> <id> <provider>   Switch one session's model\n  --dry-run                    Never send real nudges\n  --help                       Show this help\n";
+pub const HELP: &str = "Session Keeper\nUsage: session-keeper-rust [options]\n\nOptions:\n  (none)                       Open the window and run the watchdog while it is open\n  --check-now                  Run one watchdog tick in the terminal and exit\n  --status                     Print session statuses and exit\n  --kick <session-id>          Send the nudge prompt to one session now\n  --models [filter]            List available models, optionally filtered\n  --set-model <sid> <id> <provider>   Switch one session's model\n  --export-audit               Write history + log to ~/session-keeper-audit.txt
+  --dry-run                    Never send real nudges\n  --help                       Show this help\n";

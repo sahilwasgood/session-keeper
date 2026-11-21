@@ -56,3 +56,9 @@ fn models_mode_with_optional_filter() {
     let all = parse_args(&args(&["session-keeper-rust", "--models"]));
     assert_eq!(all.mode, Mode::Models(None));
 }
+
+#[test]
+fn export_audit_mode() {
+    let o = parse_args(&args(&["session-keeper-rust", "--export-audit"]));
+    assert_eq!(o.mode, Mode::ExportAudit);
+}
