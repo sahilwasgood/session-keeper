@@ -68,3 +68,5 @@ R-009: State::load_from_path sets a process-global corrupt flag; main() logs + e
 Question guard: added db::is_question (trim trailing whitespace, recognize fullwidth ?) and used it in both classify branches; added unit + classify-with-trailing-newline tests. 29 binaries green. Fresh release reinstalled and live GUI smoke-checked (summary + Events connected).
 
 Save-failure surfacing: State::save() now logs the first failure once per process (covers all 20 ignored-Result call sites) without caller churn. New save_failure_tests.rs binary verifies exactly one log line on repeated failures; 30 binaries green; live app shows zero spurious warnings.
+
+CLI exit consistency: --kick on an unknown session now exits 1 (was 0); --set-model validates the watch list before calling the API and exits 1. Added cli_exit_tests.rs (spawns binary with isolated paths) covering both; 31 binaries green.

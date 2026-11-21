@@ -963,7 +963,7 @@ fn main() {
                 Some(s) => s.clone(),
                 None => {
                     eprintln!("Session {} is not in the watch list", sid);
-                    return;
+                    std::process::exit(1);
                 }
             };
             let prompt = session.prompt.clone().unwrap_or_else(|| st.default_prompt.clone());
@@ -1013,6 +1013,10 @@ fn main() {
             return;
         }
         Mode::SetModel(sid, id, provider) => {
+            if !State::load().sessions.iter().any(|s| s.id == sid) {
+                eprintln!("Session {} is not in the watch list", sid);
+                std::process::exit(1);
+            }
             match switch_model(&Config::api_base(), &Config::password(), &sid, &id, &provider) {
                 Ok(()) => {
                     log_line(&format!("{}: model switched to {} ({})", sid, id, provider));
