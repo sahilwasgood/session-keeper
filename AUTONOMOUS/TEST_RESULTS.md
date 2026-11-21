@@ -37,3 +37,5 @@ Final integration: 28 test binaries green; new tests for URL encoding, invalid s
 Final: 28 binaries green after Kick confirmation and preflight; GUI restarted pid 285589, window present, ticking.
 
 CLI --sessions verified against live OpenCode API; session id/title parsing covered by tests.
+
+Failure alert field integrated: 28 binaries green; GUI restarted with final binary.

@@ -236,8 +236,18 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
             }
             Err(e) => {
                 let mut st = state.borrow_mut();
+                let cooldown = st.alert_cooldown_s * 1000;
                 if let Some(x) = st.sessions.iter_mut().find(|x| x.id == s.id) {
                     x.last_action = format!("failed {}", e);
+                    if now - x.failure_alert_ms > cooldown {
+                        let title = session_title(&conn, &s.id);
+                        notify(
+                            "Session Keeper",
+                            &format!("Nudge failed for {}", if title.is_empty() { &s.id } else { &title }),
+                        );
+                        x.failure_alert_ms = now;
+                        log_line(&format!("{}: alerted nudge failure", s.id));
+                    }
                 }
                 log_line(&format!("{}: prompt failed {}", s.id, e));
             }
@@ -260,6 +270,7 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
         question_alert_ms: s.question_alert_ms,
         stalled_alert_ms: s.stalled_alert_ms,
         missing_alert_ms: s.missing_alert_ms,
+        failure_alert_ms: s.failure_alert_ms,
     }).collect();
     let globals = GlobalTickFields {
         last_tick_ms: now,
@@ -1118,7 +1129,7 @@ fn main() {
         } else {
             st_add.borrow_mut().sessions.push(Session {
                 id: sid, enabled: true, prompt: None, handled: 0, prompted: 0,
-                last_nudge: 0, nudges: 0, last_action: "added".to_string(), idle_streak: 0, last_hash: None, last_status: String::new(), last_alert_ms: 0, question_alert_ms: 0, stalled_alert_ms: 0, missing_alert_ms: 0,
+                last_nudge: 0, nudges: 0, last_action: "added".to_string(), idle_streak: 0, last_hash: None, last_status: String::new(), last_alert_ms: 0, question_alert_ms: 0, stalled_alert_ms: 0, missing_alert_ms: 0, failure_alert_ms: 0,
             });
             let _ = st_add.borrow().save();
             entry_add.set_text("");

@@ -30,7 +30,7 @@ fn save_then_load_preserves_session_fields() {
         nudges: 4,
         question_alert_ms: 111,
         stalled_alert_ms: 222,
-        missing_alert_ms: 333,
+        missing_alert_ms: 333, failure_alert_ms: 444,
         last_action: "nudged".to_string(), idle_streak: 0, last_hash: None, last_status: String::new(), last_alert_ms: 0,
     });
     let path = Path::new("/tmp/sk-roundtrip-state.json");
@@ -43,6 +43,7 @@ fn save_then_load_preserves_session_fields() {
     assert_eq!(loaded.sessions[0].question_alert_ms, 111);
     assert_eq!(loaded.sessions[0].stalled_alert_ms, 222);
     assert_eq!(loaded.sessions[0].missing_alert_ms, 333);
+    assert_eq!(loaded.sessions[0].failure_alert_ms, 444);
     assert_eq!(loaded.tick_interval_s, 15);
     assert_eq!(loaded.global_nudge_cap, 12);
     assert_eq!(loaded.alert_cooldown_s, 600);
@@ -102,6 +103,7 @@ fn tick_merge_preserves_user_edits() {
         question_alert_ms: 0,
         stalled_alert_ms: 0,
         missing_alert_ms: 333,
+        failure_alert_ms: 0,
     }];
     apply_tick_fields(&mut st, &updates, GlobalTickFields {
         last_tick_ms: 100,

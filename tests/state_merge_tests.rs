@@ -16,7 +16,7 @@ fn tf(id: &str) -> TickFields {
         last_alert_ms: 0,
         question_alert_ms: 0,
         stalled_alert_ms: 0,
-        missing_alert_ms: 0,
+        missing_alert_ms: 0, failure_alert_ms: 0,
     }
 }
 
