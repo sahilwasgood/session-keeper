@@ -5,7 +5,7 @@ use session_keeper_rust::cli::{parse_args, Mode, HELP};
 use session_keeper_rust::config::{load_env_file, Config};
 use session_keeper_rust::events::watch_events;
 use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_exists, session_model, session_title, Status};
-use session_keeper_rust::nudge::{append_history, decide, fetch_models_result, fetch_sessions_result, has_pending_human_input, log_line, notify, nudges_in_last_hour_all, send_nudge, switch_model, Decision, ModelInfo, SessionInfo};
+use session_keeper_rust::nudge::{append_history, decide, fetch_models_result, fetch_sessions_result, has_pending_human_input, log_line, notify, notify_send_available, nudges_in_last_hour_all, send_nudge, switch_model, Decision, ModelInfo, SessionInfo};
 use session_keeper_rust::process::create_lock;
 use session_keeper_rust::state::{apply_tick_fields, states_differ, GlobalTickFields, Session, State, TickFields};
 use session_keeper_rust::safety::{fingerprint, should_nudge_after_debounce};
@@ -728,10 +728,21 @@ impl Drop for LockGuard {
     }
 }
 
+fn preflight() {
+    let db = Config::db_path();
+    log_line(&format!("Preflight: database {} {}", db.display(), if db.exists() { "ok" } else { "MISSING" }));
+    let svc = Config::services_json();
+    log_line(&format!("Preflight: credentials {} {}", svc.display(), if svc.exists() { "ok" } else { "MISSING" }));
+    log_line(&format!("Preflight: notification transport {}", if notify_send_available() { "ok" } else { "MISSING notify-send" }));
+}
+
 fn main() {
     load_env_file();
     let raw: Vec<String> = std::env::args().collect();
     let opts = parse_args(&raw);
+    if matches!(opts.mode, Mode::Gui | Mode::Watch) {
+        preflight();
+    }
     let boot_state = State::load();
     if session_keeper_rust::state::state_was_corrupt() {
         let msg = "State file was corrupt: a timestamped backup was saved and defaults were loaded";
