@@ -82,3 +82,5 @@ R-013 partial: tick outcome carries cap_remaining (computed from global cap and 
 R-010: loop detection now catches A->B->A via Session.prev_hash (serde default, migrates old state) and safety::is_repeating_output, with unit test for A->A/A->B->A/non-loop cases. Live app shows no false loop holds; 31 binaries green.
 
 R-014 partial: both CLI and GUI state import now call state::backup_state(), producing a timestamped state.bak-<ms> file; CLI prints its path, GUI shows it in the summary. Verified with isolated import; 31 binaries green.
+
+SSE indicator correctness: watch_events clears connected on EOF/read error, not just call() failure. Added mock SSE server test that emits one event, closes cleanly, and asserts both wake and connected=false. Live indicator still reads connected.

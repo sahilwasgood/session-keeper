@@ -12,6 +12,7 @@
 - Broader question detection (trailing whitespace and fullwidth mark), missing notify-send detection, and a neutral Quit button.
 - Loop detection now catches A->B->A output oscillation in addition to unchanged output.
 - State import now saves a timestamped backup of the previous state before overwriting.
+- Event-stream health indicator now clears on a clean stream close, not only on connection failure.
 
 ## v0.1.0 (2026-11-22)
 

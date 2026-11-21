@@ -83,6 +83,12 @@ pub fn watch_events(
                         Err(_) => break,
                     }
                 }
+                // EOF or read error ends the stream even though request.call() succeeded.
+                if was_connected {
+                    crate::nudge::log_line("event stream disconnected");
+                    connected.store(false, Ordering::Relaxed);
+                    was_connected = false;
+                }
             }
             Err(e) => {
                 if was_connected {
