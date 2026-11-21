@@ -27,6 +27,18 @@ pub fn short_id(id: &str) -> String {
     id.chars().rev().take(12).collect::<Vec<_>>().into_iter().rev().collect()
 }
 
+pub fn history_for_sid(text: &str, sid: &str, limit: usize) -> Vec<String> {
+    text.lines()
+        .filter(|line| serde_json::from_str::<serde_json::Value>(line)
+            .ok()
+            .and_then(|v| v.get("sid").and_then(|s| s.as_str()).map(str::to_string))
+            .as_deref() == Some(sid))
+        .rev()
+        .take(limit)
+        .map(str::to_string)
+        .collect()
+}
+
 pub fn format_age(ts_ms: i64, now_ms: i64) -> String {
     let secs = ((now_ms - ts_ms).max(0)) / 1000;
     if secs < 2 {

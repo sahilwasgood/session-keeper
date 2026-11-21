@@ -58,3 +58,16 @@ fn sort_key_by_name_or_priority() {
     assert_eq!(sort_key(&Status::Due, "tg", "ses_a", true).0, 0);
     assert_eq!(sort_key(&Status::Due, "a", "ses_a", true).1, "ases_a");
 }
+
+#[test]
+fn history_for_sid_filters_and_limits() {
+    let text = [
+        r#"{"t":1,"sid":"ses_a","kind":"nudge","detail":"x"}"#,
+        r#"{"t":2,"sid":"ses_b","kind":"nudge","detail":"y"}"#,
+        r#"{"t":3,"sid":"ses_a","kind":"nudge","detail":"z"}"#,
+    ].join("\n");
+    let lines = session_keeper_rust::ui::history_for_sid(&text, "ses_a", 5);
+    assert_eq!(lines.len(), 2);
+    assert!(lines[0].contains("\"z\""));
+    assert!(lines[1].contains("\"x\""));
+}

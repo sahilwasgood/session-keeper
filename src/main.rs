@@ -8,7 +8,7 @@ use session_keeper_rust::nudge::{append_history, decide, fetch_models, log_line,
 use session_keeper_rust::process::{pid_alive, read_lock};
 use session_keeper_rust::state::{states_differ, Session, State};
 use session_keeper_rust::safety::{fingerprint, should_nudge_after_debounce};
-use session_keeper_rust::ui::{format_age, matches_filter, needs_attention, prompt_display, short_id, sort_key, status_changed, status_class, status_text, summary_line, CSS};
+use session_keeper_rust::ui::{format_age, history_for_sid, matches_filter, needs_attention, prompt_display, short_id, sort_key, status_changed, status_class, status_text, summary_line, CSS};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::Path;
@@ -421,6 +421,9 @@ fn refresh(
                 ),
                 _ => "Session data unavailable".to_string(),
             };
+            let history_text = std::fs::read_to_string(Config::history_path()).unwrap_or_default();
+            let recent = history_for_sid(&history_text, &sid, 8).join("\n");
+            let body = format!("{}\n\nRecent nudges:\n{}", body, if recent.is_empty() { "none" } else { &recent });
             let dlg = gtk::Dialog::with_buttons(
                 Some("Session details"),
                 None::<&gtk::Window>,
@@ -652,8 +655,11 @@ fn main() {
             let conn = open_db();
             for s in &st.sessions {
                 let status = conn.as_ref().map(|c| classify(c, &s.id, &st)).unwrap_or(Status::Clean);
-                println!("{}  {}  {}  nudges={}  last={}", short_id(&s.id), s.id,
-                    status_text(&status), s.nudges, s.last_action);
+                let model = conn.as_ref().map(|c| session_model(c, &s.id)).unwrap_or_default();
+                let last_age = if s.last_nudge > 0 { format_age(s.last_nudge, now_ms()) } else { "never".to_string() };
+                print_line(&format!("{}  {}  {} ({})  model={}  nudges={}  last nudge {} ago  last={}",
+                    short_id(&s.id), s.id, status_text(&status), reason(&status),
+                    if model.is_empty() { "-" } else { &model }, s.nudges, last_age, s.last_action));
             }
             return;
         }
