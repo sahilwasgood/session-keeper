@@ -88,7 +88,9 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
             let msg = "Watchdog paused: drive or database unavailable".to_string();
             log_line(&msg);
             return (msg, Vec::new(), GlobalTickFields {
-                last_tick_ms: now_ms(),
+                // Keep the old heartbeat: a paused watchdog must still trip the
+                // stale detector if the database stays unavailable.
+                last_tick_ms: state.borrow().last_tick_ms,
                 cap_alert_ms: state.borrow().cap_alert_ms,
                 missing_alert_ms: state.borrow().missing_alert_ms,
                 cap_remaining: -1,

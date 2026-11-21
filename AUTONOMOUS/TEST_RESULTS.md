@@ -90,3 +90,5 @@ Accessibility: measured all badge/button foreground/background pairs at 4.86:1 t
 External interval edits: the 5s state sync now re-arms the GTK tick timer when tick_interval_s changes via CLI/another process. Verified live: --set-setting interval 5 applied with no startup errors, restored to 30.
 
 Daily digest: local_day_start_ms uses localtime_r so "Today" starts at local midnight (previously 05:30 IST). Verified live digest changed from 158 (UTC boundary) to 62 (local boundary); unit test pins the calculation.
+
+R-001 heartbeat: DB-outage ticks now preserve last_tick_ms instead of stamping now, allowing the stale detector to fire. Verified with isolated missing-DB state seeded 3 minutes old: GUI showed "WATCHDOG STALE - last tick 3m 10s".

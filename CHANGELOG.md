@@ -14,6 +14,7 @@
 - State import now saves a timestamped backup of the previous state before overwriting.
 - Event-stream health indicator now clears on a clean stream close, not only on connection failure.
 - Daily nudge digest rolls over at local midnight instead of 00:00 UTC.
+- A database outage no longer refreshes the watchdog heartbeat, so the stale-watchdog alert fires as intended.
 
 ## v0.1.0 (2026-11-22)
 
