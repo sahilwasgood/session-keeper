@@ -2,10 +2,10 @@ use glib::clone;
 use gtk::prelude::*;
 use rusqlite::{Connection, OpenFlags};
 use session_keeper_rust::config::{Config, DRIVE};
-use session_keeper_rust::db::{classify, last_idle_ts, Status};
+use session_keeper_rust::db::{classify, last_idle_ts, session_title, Status};
 use session_keeper_rust::nudge::{append_history, decide, log_line, send_nudge, Decision};
 use session_keeper_rust::state::{Session, State};
-use session_keeper_rust::ui::status_text;
+use session_keeper_rust::ui::{short_id, status_class, status_text, summary_line, CSS};
 use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
@@ -24,7 +24,8 @@ fn open_db() -> Option<Connection> {
     if !Path::new(DRIVE).exists() || !Config::db_path().exists() {
         return None;
     }
-    Connection::open_with_flags(Config::db_path(), OpenFlags::SQLITE_OPEN_READ_ONLY).ok()
+    Connection::open_with_flags(Config::db_path(), OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .ok()
         .and_then(|c| {
             // Keep a locked DB from stalling the GTK main loop for the default 5s.
             c.busy_timeout(std::time::Duration::from_millis(1200)).ok()?;
@@ -37,7 +38,7 @@ fn tick(state: &Rc<RefCell<State>>) -> String {
     let conn = match open_db() {
         Some(c) => c,
         None => {
-            let msg = "tick skipped: drive or db missing".to_string();
+            let msg = "Watchdog paused: drive or database unavailable".to_string();
             log_line(&msg);
             return msg;
         }
@@ -45,7 +46,7 @@ fn tick(state: &Rc<RefCell<State>>) -> String {
     let sessions: Vec<Session> = state.borrow().sessions.clone();
     let mut nudged = 0;
     let mut held = 0;
-    for s in sessions {
+    for s in &sessions {
         let (status, decision) = {
             let st = state.borrow();
             let status = classify(&conn, &s.id, &st);
@@ -54,10 +55,9 @@ fn tick(state: &Rc<RefCell<State>>) -> String {
         };
         match decision {
             Decision::Nudge => {
-                let prompt = s
-                    .prompt
-                    .clone()
-                    .unwrap_or_else(|| state.borrow().default_prompt.clone());
+                let raw = s.prompt.clone().unwrap_or_else(|| state.borrow().default_prompt.clone());
+                let prompt = raw.trim().to_string();
+                let prompt = if prompt.is_empty() { "continue".to_string() } else { prompt };
                 match send_nudge(Config::api_base(), &Config::password(), &s.id, &prompt) {
                     Ok(()) => {
                         let ts = last_idle_ts(&conn, &s.id);
@@ -92,7 +92,7 @@ fn tick(state: &Rc<RefCell<State>>) -> String {
     if nudged > 0 {
         let _ = state.borrow().save();
     }
-    format!("last check {}: nudged {}, held {}", stamp(now), nudged, held)
+    summary_line(&stamp(now), nudged, held)
 }
 
 fn refresh(state: &Rc<RefCell<State>>, list: &gtk::Box) {
@@ -101,21 +101,30 @@ fn refresh(state: &Rc<RefCell<State>>, list: &gtk::Box) {
     }
     let conn = open_db();
     let sessions = state.borrow().sessions.clone();
-    for s in sessions {
-        let status = conn
+    for s in &sessions {
+        let (status, title) = conn
             .as_ref()
-            .map(|c| classify(c, &s.id, &state.borrow()))
-            .unwrap_or(Status::Clean);
-        let row = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-        let short: String = s.id.chars().rev().take(12).collect::<Vec<_>>().into_iter().rev().collect();
-        let label = gtk::Label::new(Some(&format!(
-            "{}  {}  {}",
-            short,
-            status_text(&status),
-            s.last_action
-        )));
-        label.set_xalign(0.0);
-        label.set_hexpand(true);
+            .map(|c| (classify(c, &s.id, &state.borrow()), session_title(c, &s.id)))
+            .unwrap_or((Status::Clean, String::new()));
+
+        let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        card.style_context().add_class("card");
+
+        let top = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        let badge = gtk::Label::new(Some(status_text(&status)));
+        badge.style_context().add_class("badge");
+        badge.style_context().add_class(status_class(&status));
+        badge.set_size_request(120, -1);
+        top.add(&badge);
+
+        let name = if title.is_empty() { short_id(&s.id) } else { format!("{}   {}", title, short_id(&s.id)) };
+        let id_label = gtk::Label::new(Some(&name));
+        id_label.style_context().add_class("session-id");
+        id_label.set_xalign(0.0);
+        id_label.set_hexpand(true);
+        id_label.set_tooltip_text(Some(&s.id));
+        top.add(&id_label);
+
         let button = gtk::Button::with_label(if s.enabled { "Pause" } else { "Resume" });
         let st = state.clone();
         let list_c = list.clone();
@@ -127,54 +136,108 @@ fn refresh(state: &Rc<RefCell<State>>, list: &gtk::Box) {
             let _ = st.borrow().save();
             refresh(&st, &list_c);
         }));
-        row.add(&label);
-        row.add(&button);
-        list.add(&row);
+        top.add(&button);
+        card.add(&top);
+
+        let meta = gtk::Label::new(Some(&format!(
+            "nudges {}   last: {}   prompt: {}",
+            s.nudges,
+            if s.last_action.is_empty() { "never" } else { &s.last_action },
+            s.prompt.as_deref().unwrap_or("default")
+        )));
+        meta.style_context().add_class("session-meta");
+        meta.set_xalign(0.0);
+        meta.set_line_wrap(true);
+        card.add(&meta);
+
+        list.add(&card);
+    }
+    if sessions.is_empty() {
+        let empty = gtk::Label::new(Some("No watched sessions. Add a session id below."));
+        empty.style_context().add_class("note");
+        list.add(&empty);
     }
     list.show_all();
 }
 
 fn main() {
     gtk::init().expect("GTK3 failed to initialize");
+
+    if let Some(screen) = gtk::gdk::Screen::default() {
+        let provider = gtk::CssProvider::new();
+            {
+            let _ = provider.load_from_data(CSS.as_bytes());
+            gtk::StyleContext::add_provider_for_screen(
+                &screen,
+                &provider,
+                gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+            );
+        }
+    }
+
     let state = Rc::new(RefCell::new(State::load()));
 
     let window = gtk::Window::new(gtk::WindowType::Toplevel);
     window.set_title("Session Keeper");
-    window.set_default_size(560, 420);
+    window.set_default_size(920, 620);
+    window.set_size_request(700, 480);
     window.connect_destroy(|_| gtk::main_quit());
 
-    let outer = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    let header = gtk::HeaderBar::new();
+    header.set_title(Some("Session Keeper"));
+    header.set_subtitle(Some("On-demand OpenCode watchdog"));
+    header.set_show_close_button(true);
+    window.set_titlebar(Some(&header));
+
+    let quit = gtk::Button::with_label("Quit");
+    quit.style_context().add_class("destructive-action");
+    quit.connect_clicked(|_| gtk::main_quit());
+    header.pack_end(&quit);
+
+    let outer = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    outer.set_border_width(12);
     window.add(&outer);
 
-    let status = gtk::Label::new(Some("starting"));
-    status.set_xalign(0.0);
-    outer.add(&status);
+    let summary = gtk::Label::new(Some("starting"));
+    summary.style_context().add_class("summary");
+    summary.set_xalign(0.0);
+    outer.add(&summary);
 
-    let note = gtk::Label::new(Some("On demand only: the watchdog runs while this window is open."));
+    let note = gtk::Label::new(Some("The watchdog runs only while this window is open. Closing it stops everything."));
+    note.style_context().add_class("note");
     note.set_xalign(0.0);
     outer.add(&note);
 
-    let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
-    let scroll = gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
-    scroll.add(&list);
-    scroll.set_vexpand(true);
-    outer.add(&scroll);
-
-    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let entry = gtk::Entry::new();
-    entry.set_placeholder_text(Some("session id (ses_...)"));
+    entry.set_placeholder_text(Some("Session id (ses_...)"));
     entry.set_hexpand(true);
     controls.add(&entry);
 
-    let add = gtk::Button::with_label("Add");
-    let st = state.clone();
+    let add = gtk::Button::with_label("Add session");
+    controls.add(&add);
+
+    let check = gtk::Button::with_label("Check now");
+    check.style_context().add_class("suggested-action");
+    controls.add(&check);
+    outer.add(&controls);
+
+    let list = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    let scroll = gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
+    scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
+    scroll.set_vexpand(true);
+    scroll.add(&list);
+    outer.add(&scroll);
+
+    // Wire the controls now that `list` exists.
+    let st_add = state.clone();
     let list_add = list.clone();
-    let status_add = status.clone();
+    let summary_add = summary.clone();
     let entry_add = entry.clone();
-    add.connect_clicked(clone!(@strong st, @strong list_add, @strong status_add, @strong entry_add => move |_| {
+    add.connect_clicked(clone!(@strong st_add, @strong list_add, @strong summary_add, @strong entry_add => move |_| {
         let sid = entry_add.text().trim().to_string();
-        if sid.starts_with("ses_") && !st.borrow().sessions.iter().any(|s| s.id == sid) {
-            st.borrow_mut().sessions.push(Session {
+        if sid.starts_with("ses_") && !st_add.borrow().sessions.iter().any(|s| s.id == sid) {
+            st_add.borrow_mut().sessions.push(Session {
                 id: sid,
                 enabled: true,
                 prompt: None,
@@ -184,42 +247,35 @@ fn main() {
                 nudges: 0,
                 last_action: "added".to_string(),
             });
-            let _ = st.borrow().save();
+            let _ = st_add.borrow().save();
             entry_add.set_text("");
-            status_add.set_label("session added");
-            refresh(&st, &list_add);
+            summary_add.set_label("Session added");
+            refresh(&st_add, &list_add);
         }
     }));
-    controls.add(&add);
 
-    let check = gtk::Button::with_label("Check now");
-    let st = state.clone();
+    let st_check = state.clone();
     let list_check = list.clone();
-    let status_check = status.clone();
-    check.connect_clicked(clone!(@strong st, @strong list_check, @strong status_check => move |_| {
-        status_check.set_label(&tick(&st));
-        refresh(&st, &list_check);
+    let summary_check = summary.clone();
+    check.connect_clicked(clone!(@strong st_check, @strong list_check, @strong summary_check => move |_| {
+        summary_check.set_label(&tick(&st_check));
+        refresh(&st_check, &list_check);
     }));
-    controls.add(&check);
-
-    let quit = gtk::Button::with_label("Quit");
-    quit.connect_clicked(|_| gtk::main_quit());
-    controls.add(&quit);
-    outer.add(&controls);
 
     refresh(&state, &list);
-    status.set_label(&tick(&state));
+    summary.set_label(&tick(&state));
     refresh(&state, &list);
 
-    let st = state.clone();
+    let st_timer = state.clone();
     let list_timer = list.clone();
-    let status_timer = status.clone();
-    gtk::glib::timeout_add_seconds_local(30, move || {
-        status_timer.set_label(&tick(&st));
-        refresh(&st, &list_timer);
+    let summary_timer = summary.clone();
+    glib::timeout_add_seconds_local(30, move || {
+        summary_timer.set_label(&tick(&st_timer));
+        refresh(&st_timer, &list_timer);
         glib::ControlFlow::Continue
     });
 
     window.show_all();
     gtk::main();
 }
+

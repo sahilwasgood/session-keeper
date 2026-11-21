@@ -1,0 +1,1 @@
+/home/mint/session-keeper-rust/target/release/libsession_keeper_rust.rlib: /home/mint/session-keeper-rust/src/config.rs /home/mint/session-keeper-rust/src/db.rs /home/mint/session-keeper-rust/src/lib.rs /home/mint/session-keeper-rust/src/nudge.rs /home/mint/session-keeper-rust/src/state.rs /home/mint/session-keeper-rust/src/ui.rs

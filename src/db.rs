@@ -54,6 +54,14 @@ fn last_assistant(conn: &Connection, sid: &str) -> (i64, String) {
     }
 }
 
+pub fn session_title(conn: &Connection, sid: &str) -> String {
+    conn.query_row("SELECT title FROM session_v2 WHERE id=?1", [sid], |r| r.get::<_, Option<String>>(0))
+        .optional()
+        .unwrap_or(None)
+        .and_then(|title| title)
+        .unwrap_or_default()
+}
+
 pub fn last_idle_ts(conn: &Connection, sid: &str) -> i64 {
     conn.query_row(
         "SELECT time_created FROM session_message WHERE session_id=?1 AND type='idle'

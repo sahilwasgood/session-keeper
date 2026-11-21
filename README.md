@@ -13,13 +13,10 @@ A small on-demand watchdog for OpenCode sessions. Nothing runs at boot. Open the
 
 The release binary is installed at `~/.local/bin/session-keeper-rust` and a desktop launcher named Session Keeper is in `~/.local/share/applications/`.
 
-The old boot-time services are disabled:
-
-```
-sudo systemctl disable --now session-keeper.timer session-keeper.service session-keeper-dash.service
-```
-
-`session-keeper.service` is a static oneshot with no timer now, so it cannot trigger on its own. The Python files remain in `/home/mint/session-keeper/` as a fallback.
+The old Python files and the three systemd units were removed on 2026-11-21, so
+this app is now the only Session Keeper. Its state, history and log files are
+shared locations in `~/.config/session-keeper/` and `~/session-keeper.log`, so
+watched sessions survive.
 
 ## Build
 

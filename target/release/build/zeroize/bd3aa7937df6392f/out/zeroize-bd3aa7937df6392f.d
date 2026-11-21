@@ -1,0 +1,12 @@
+/home/mint/session-keeper-rust/target/release/build/zeroize/bd3aa7937df6392f/out/zeroize-bd3aa7937df6392f.d: /home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/lib.rs /home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/x86.rs /home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/barrier.rs /home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/bulk.rs /home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/stack.rs /home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/../README.md
+
+/home/mint/session-keeper-rust/target/release/build/zeroize/bd3aa7937df6392f/out/libzeroize-bd3aa7937df6392f.rlib: /home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/lib.rs /home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/x86.rs /home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/barrier.rs /home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/bulk.rs /home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/stack.rs /home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/../README.md
+
+/home/mint/session-keeper-rust/target/release/build/zeroize/bd3aa7937df6392f/out/libzeroize-bd3aa7937df6392f.rmeta: /home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/lib.rs /home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/x86.rs /home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/barrier.rs /home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/bulk.rs /home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/stack.rs /home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/../README.md
+
+/home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/lib.rs:
+/home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/x86.rs:
+/home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/barrier.rs:
+/home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/bulk.rs:
+/home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/stack.rs:
+/home/mint/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.2/src/../README.md:

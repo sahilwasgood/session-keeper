@@ -66,6 +66,10 @@ pub fn decide(state: &State, session: &Session, status: &Status, now_ms: i64) ->
     decide_with_history(state, session, status, now_ms, recent)
 }
 
+pub fn prompt_url(api: &str, sid: &str) -> String {
+    format!("{}/api/session/{}/prompt", api.trim_end_matches('/'), sid)
+}
+
 pub fn send_nudge(api: &str, password: &str, sid: &str, text: &str) -> Result<(), String> {
     send_nudge_with_timeout(api, password, sid, text, std::time::Duration::from_secs(10))
 }
@@ -79,7 +83,7 @@ pub fn send_nudge_with_timeout(
 ) -> Result<(), String> {
     let auth = format!("Basic {}", b64(format!("opencode:{}", password).as_bytes()));
     let body = serde_json::json!({ "text": text }).to_string();
-    let url = format!("{}/session/{}/prompt", api.trim_end_matches('/'), sid);
+    let url = prompt_url(api, sid);
     let resp = ureq::post(&url)
         .timeout(timeout)
         .set("Authorization", &auth)
