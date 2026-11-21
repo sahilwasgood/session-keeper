@@ -16,7 +16,7 @@ A small on-demand watchdog for OpenCode sessions. Nothing runs at boot. Open the
 
 ## GUI
 
-- Session cards with status badge, reason, model, effective prompt, nudge count and time-in-state.
+- Session cards with status badge, reason, model, effective prompt, nudge count against the per-session cap, and time-in-state. The status line shows the remaining global cap.
 - Per-session buttons: Details, Edit prompt, Model, Kick (with 10s cooldown), Remove, Pause/Resume.
 - Filter by id or title, "Attention only" toggle, priority or name sorting.
 - One-click **Pause all / Resume all** in the toolbar; it stays in sync with CLI changes to the global switch. A corrupt state file produces a startup warning and keeps a timestamped backup.

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Local wall-clock timestamps in logs and status (previously UTC).
+- Portable OpenCode defaults plus an optional `~/.config/session-keeper/env` override file.
+- Startup preflight logging for database, credentials, and notification transport.
+- Clear API failure messages in Discover, model picker, `--sessions`, and `--models` instead of an empty list.
+- Remaining global cap in the status line and per-session cap on each card.
+- State save failures logged once; corrupt state warning; duplicate backup prevention.
+- Worker panic and channel-disconnect recovery; consistent CLI exit codes for unknown sessions.
+- Broader question detection (trailing whitespace and fullwidth mark), missing notify-send detection, and a neutral Quit button.
+
 ## v0.1.0 (2026-11-22)
 
 First public release.
