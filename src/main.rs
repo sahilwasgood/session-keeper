@@ -681,6 +681,10 @@ fn main() {
                         "model": model,
                         "nudges": s.nudges,
                         "last_action": s.last_action,
+                        "last_nudge_ms": s.last_nudge,
+                        "min_gap_s": st.min_gap,
+                        "session_cap_per_hour": st.max_nudges_per_hour,
+                        "away_mode": st.away_mode,
                     })
                 }).collect();
                 print_line(&serde_json::to_string(&items).unwrap_or_else(|_| "[]".to_string()));
