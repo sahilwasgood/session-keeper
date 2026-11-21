@@ -1135,6 +1135,19 @@ fn main() {
     let attention_cb = gtk::CheckButton::with_label("Attention only");
     controls.add(&attention_cb);
 
+    let pause_all = gtk::ToggleButton::with_label(if state.borrow().enabled { "Pause all" } else { "Resume all" });
+    pause_all.style_context().add_class("destructive-action");
+    let st_pause = state.clone();
+    let summary_pause = summary.clone();
+    pause_all.connect_toggled(move |b| {
+        let enabled = !b.is_active();
+        st_pause.borrow_mut().enabled = enabled;
+        let _ = st_pause.borrow().save();
+        b.set_label(if enabled { "Pause all" } else { "Resume all" });
+        summary_pause.set_label(if enabled { "Watching enabled" } else { "All automatic nudges paused" });
+    });
+    controls.add(&pause_all);
+
     let add = icon_button("Add session", "list-add-symbolic");
     let st_add = state.clone();
     let list_add = Rc::new(RefCell::new(gtk::Box::new(gtk::Orientation::Vertical, 2)));

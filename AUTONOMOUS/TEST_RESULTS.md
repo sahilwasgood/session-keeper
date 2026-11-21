@@ -54,3 +54,5 @@ Event-driven wakeups: SSE /api/event parsed {"type":...} frames; watcher thread 
 SSE filter verified; 29 test binaries green with event_url regression test.
 
 SSE observability: connection/disconnection logged once, retry errors throttled to once per minute; live restart logged "event stream connected".
+
+Toolbar pause verified via AT-SPI: Pause all -> enabled=false, label "Resume all"; second click -> enabled=true, label "Pause all".
