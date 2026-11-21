@@ -1,5 +1,10 @@
 # Session Keeper (Rust)
 
+[![CI](https://github.com/sahilwasgood/session-keeper-rust/actions/workflows/ci.yml/badge.svg)](https://github.com/sahilwasgood/session-keeper-rust/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+![Session Keeper main window](docs/images/gui.png)
+
 A small on-demand watchdog for OpenCode sessions. Nothing runs at boot. Open the window when you need it; the watchdog runs only while the window is open, and closing it stops everything. A single-instance lock prevents two watchers from nudging the same sessions.
 
 ## What it does
