@@ -48,6 +48,16 @@ Defaults follow a standard OpenCode install: database `~/.local/share/opencode/o
 
 To override any path or the API address, put `KEY=value` lines in `~/.config/session-keeper/env` (one per line, `#` comments allowed). Real environment variables take precedence. Available keys: `SESSION_KEEPER_DB`, `SESSION_KEEPER_DRIVE`, `SESSION_KEEPER_STATE`, `SESSION_KEEPER_HISTORY`, `SESSION_KEEPER_LOG`, `SESSION_KEEPER_API`, `SESSION_KEEPER_SERVICE_JSON`, `SESSION_KEEPER_LOCK`, `SESSION_KEEPER_AUDIT`, `SESSION_KEEPER_DRY_RUN`, `SESSION_KEEPER_NOTIFY`.
 
+## Troubleshooting
+
+Run `session-keeper-rust --doctor` first. It reports the database path, credentials path, notifier availability, and whether the OpenCode API is reachable.
+
+- **Watchdog paused: drive or database unavailable**: the database path is wrong or unreadable. Set `SESSION_KEEPER_DB` in the env file to your `opencode.db`, or check that its drive is mounted.
+- **Events: offline (30s polling fallback active)**: the OpenCode server is not running on the configured port or the credentials are wrong. Nudges still work through the 30-second poll. Restart the server or correct `SESSION_KEEPER_API` and `SESSION_KEEPER_SERVICE_JSON`.
+- **already running (PID)**: another Session Keeper instance holds the lock, or a stale lock remains after a crash. Close the other instance; a dead PID's lock is replaced automatically on the next start.
+- **GUI needs a display**: set `DISPLAY`, or use `--watch` in a terminal. There is no headless GUI mode.
+- **Notification failed: notify-send unavailable**: install `libnotify-bin` (Debian/Ubuntu) or your distribution's `notify-send` package. Desktop alerts are also written to the log.
+
 ## Files
 
 State and history live in `~/.config/session-keeper/`. Nothing runs at boot and no background daemon is installed. Log and history files rotate automatically. The compiled binary is self-contained; no runtime data files ship with it.
