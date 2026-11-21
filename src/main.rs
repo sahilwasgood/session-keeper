@@ -1050,6 +1050,7 @@ fn main() {
     let (add_tx, add_rx) = channel::<(String, bool)>();
     let (wake_tx, wake_rx) = channel::<()>();
     let event_stop = Arc::new(AtomicBool::new(false));
+    let event_connected = Arc::new(AtomicBool::new(false));
     let _ = ADD_TX.set(add_tx.clone());
     let (session_tx, session_rx) = channel::<Vec<SessionInfo>>();
     let _ = SESSION_TX.set(session_tx.clone());
@@ -1117,6 +1118,10 @@ fn main() {
     note.style_context().add_class("note");
     note.set_xalign(0.0);
     outer.add(&note);
+    let event_label = gtk::Label::new(Some("Events: connecting..."));
+    event_label.style_context().add_class("note");
+    event_label.set_xalign(0.0);
+    outer.add(&event_label);
 
     let controls = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let entry = gtk::Entry::new();
@@ -1740,8 +1745,20 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
     let event_api = Config::api_base();
     let event_pw = Config::password();
     let event_stop_thread = event_stop.clone();
+    let event_state = event_connected.clone();
     std::thread::spawn(move || {
-        watch_events(&event_api, &event_pw, wake_tx, event_stop_thread);
+        watch_events(&event_api, &event_pw, wake_tx, event_stop_thread, event_state);
+    });
+
+    let event_label_timer = event_label.clone();
+    let event_indicator = event_connected.clone();
+    glib::timeout_add_seconds_local(5, move || {
+        event_label_timer.set_label(if event_indicator.load(Ordering::Relaxed) {
+            "Events: connected (wakeups active)"
+        } else {
+            "Events: offline (30s polling fallback active)"
+        });
+        glib::ControlFlow::Continue
     });
 
     arm_timer(&state, &tx, &busy, &timer);

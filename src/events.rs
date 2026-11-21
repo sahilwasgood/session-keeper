@@ -45,7 +45,13 @@ pub fn event_url(api: &str) -> String {
 
 /// Streams OpenCode events and sends a wake signal for relevant frames.
 /// Reconnects with a short delay on failures; `stop` ends the loop when set.
-pub fn watch_events(api: &str, password: &str, wake: Sender<()>, stop: Arc<AtomicBool>) {
+pub fn watch_events(
+    api: &str,
+    password: &str,
+    wake: Sender<()>,
+    stop: Arc<AtomicBool>,
+    connected: Arc<AtomicBool>,
+) {
     let url = event_url(api);
     let mut was_connected = false;
     let mut last_error: Option<Instant> = None;
@@ -58,6 +64,7 @@ pub fn watch_events(api: &str, password: &str, wake: Sender<()>, stop: Arc<Atomi
             Ok(response) => {
                 if !was_connected {
                     crate::nudge::log_line("event stream connected");
+                    connected.store(true, Ordering::Relaxed);
                     was_connected = true;
                     last_error = None;
                 }
@@ -80,6 +87,7 @@ pub fn watch_events(api: &str, password: &str, wake: Sender<()>, stop: Arc<Atomi
             Err(e) => {
                 if was_connected {
                     crate::nudge::log_line("event stream disconnected");
+                    connected.store(false, Ordering::Relaxed);
                     was_connected = false;
                 }
                 let now = Instant::now();
