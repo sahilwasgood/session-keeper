@@ -527,7 +527,11 @@ fn edit_prompt(
 fn write_audit() -> std::io::Result<std::path::PathBuf> {
     let history = tail_file(&Config::history_path(), 1000);
     let log = tail_file(&Config::log_path(), 1000);
-    let text = format!("=== NUDGE HISTORY ===\n{}\n=== KEEPER LOG ===\n{}\n", history, log);
+    let settings = serde_json::to_string_pretty(&State::load()).unwrap_or_default();
+    let text = format!(
+        "=== SETTINGS ===\n{}\n=== NUDGE HISTORY ===\n{}\n=== KEEPER LOG ===\n{}\n",
+        settings, history, log
+    );
     std::fs::write(Config::audit_path(), &text)?;
     Ok(Config::audit_path())
 }
@@ -717,6 +721,8 @@ fn main() {
     }
 
     let lock_path = Config::lock_path();
+    let lock_needed = matches!(opts.mode, Mode::Gui | Mode::CheckNow | Mode::Watch);
+    if lock_needed {
     if let Some(pid) = read_lock(&lock_path) {
         if pid_alive(pid) && pid != std::process::id() as i32 {
             eprintln!("Session Keeper is already running (pid {}).", pid);
@@ -727,6 +733,7 @@ fn main() {
         eprintln!("Could not write lock file; continuing without single-instance protection.");
     }
     let _lock_guard = LockGuard(lock_path);
+    }
 
     gtk::init().expect("GTK3 failed to initialize");
 
@@ -839,7 +846,14 @@ fn main() {
     let entry_add = entry.clone();
     add.connect_clicked(clone!(@strong st_add, @strong list_add, @strong views_add, @strong filter_add, @strong summary_add, @strong entry_add => move |_| {
         let sid = entry_add.text().trim().to_string();
-        if sid.starts_with("ses_") && !st_add.borrow().sessions.iter().any(|s| s.id == sid) {
+        let exists = open_db().map(|c| session_exists(&c, &sid)).unwrap_or(false);
+        if !sid.starts_with("ses_") {
+            summary_add.set_label("Session id must start with ses_");
+        } else if !exists {
+            summary_add.set_label("Session id not found in OpenCode database");
+        } else if st_add.borrow().sessions.iter().any(|s| s.id == sid) {
+            summary_add.set_label("Session is already watched");
+        } else {
             st_add.borrow_mut().sessions.push(Session {
                 id: sid, enabled: true, prompt: None, handled: 0, prompted: 0,
                 last_nudge: 0, nudges: 0, last_action: "added".to_string(), idle_streak: 0, last_hash: None, last_status: String::new(), last_alert_ms: 0,
