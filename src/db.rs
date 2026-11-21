@@ -54,6 +54,18 @@ fn last_assistant(conn: &Connection, sid: &str) -> (i64, String) {
     }
 }
 
+pub fn last_idle_ts(conn: &Connection, sid: &str) -> i64 {
+    conn.query_row(
+        "SELECT time_created FROM session_message WHERE session_id=?1 AND type='idle'
+         ORDER BY time_created DESC, rowid DESC LIMIT 1",
+        [sid],
+        |r| r.get(0),
+    )
+    .optional()
+    .unwrap_or(None)
+    .unwrap_or(0)
+}
+
 pub fn classify(conn: &Connection, sid: &str, state: &State) -> Status {
     let fallback = Session {
         id: sid.to_string(),
