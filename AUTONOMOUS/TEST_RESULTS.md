@@ -92,3 +92,5 @@ External interval edits: the 5s state sync now re-arms the GTK tick timer when t
 Daily digest: local_day_start_ms uses localtime_r so "Today" starts at local midnight (previously 05:30 IST). Verified live digest changed from 158 (UTC boundary) to 62 (local boundary); unit test pins the calculation.
 
 R-001 heartbeat: DB-outage ticks now preserve last_tick_ms instead of stamping now, allowing the stale detector to fire. Verified with isolated missing-DB state seeded 3 minutes old: GUI showed "WATCHDOG STALE - last tick 3m 10s".
+
+R-015: configurable missing/cap cooldowns. Verified CLI --set-setting writes state and GUI Save settings persists spin values 7200/600 via AT-SPI, then restored to defaults. Defaults 3600s preserve prior behavior; 31 binaries green.
