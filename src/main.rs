@@ -416,7 +416,14 @@ fn refresh(
 
         let meta = gtk::Label::new(Some(&format!(
             "prompt: {}   nudges {}   last: {}",
-            prompt_display(s.prompt.as_deref(), &default_prompt),
+            {
+                let p = prompt_display(s.prompt.as_deref(), &default_prompt);
+                if p.chars().count() > 60 {
+                    format!("{}...", p.chars().take(60).collect::<String>())
+                } else {
+                    p
+                }
+            },
             s.nudges,
             if s.last_action.is_empty() { "never" } else { &s.last_action }
         )));
