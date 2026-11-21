@@ -104,10 +104,13 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
         };
 
         if !session_exists(&conn, &s.id) {
-            let last = state.borrow().missing_alert_ms;
+            let last = state.borrow().sessions.iter().find(|x| x.id == s.id)
+                .map(|x| x.missing_alert_ms).unwrap_or(0);
             if now - last > 3_600_000 {
                 notify("Session Keeper", &format!("Watched session {} is missing from OpenCode", short_id(&s.id)));
-                state.borrow_mut().missing_alert_ms = now;
+                if let Some(x) = state.borrow_mut().sessions.iter_mut().find(|x| x.id == s.id) {
+                    x.missing_alert_ms = now;
+                }
                 if persist { let _ = state.borrow().save(); }
                 log_line(&format!("{}: alerted missing from opencode", s.id));
             }
@@ -255,6 +258,7 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
         last_alert_ms: s.last_alert_ms,
         question_alert_ms: s.question_alert_ms,
         stalled_alert_ms: s.stalled_alert_ms,
+        missing_alert_ms: s.missing_alert_ms,
     }).collect();
     let globals = GlobalTickFields {
         last_tick_ms: now,
@@ -1024,7 +1028,7 @@ fn main() {
         } else {
             st_add.borrow_mut().sessions.push(Session {
                 id: sid, enabled: true, prompt: None, handled: 0, prompted: 0,
-                last_nudge: 0, nudges: 0, last_action: "added".to_string(), idle_streak: 0, last_hash: None, last_status: String::new(), last_alert_ms: 0, question_alert_ms: 0, stalled_alert_ms: 0,
+                last_nudge: 0, nudges: 0, last_action: "added".to_string(), idle_streak: 0, last_hash: None, last_status: String::new(), last_alert_ms: 0, question_alert_ms: 0, stalled_alert_ms: 0, missing_alert_ms: 0,
             });
             let _ = st_add.borrow().save();
             entry_add.set_text("");

@@ -107,7 +107,7 @@ pub fn classify(conn: &Connection, sid: &str, state: &State) -> Status {
         prompted: 0,
         last_nudge: 0,
         nudges: 0,
-        last_action: String::new(), idle_streak: 0, last_hash: None, last_status: String::new(), last_alert_ms: 0, question_alert_ms: 0, stalled_alert_ms: 0,
+        last_action: String::new(), idle_streak: 0, last_hash: None, last_status: String::new(), last_alert_ms: 0, question_alert_ms: 0, stalled_alert_ms: 0, missing_alert_ms: 0,
     };
     let sess = state.sessions.iter().find(|s| s.id == sid).unwrap_or(&fallback);
     if !sess.enabled {

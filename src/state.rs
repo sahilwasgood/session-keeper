@@ -41,6 +41,8 @@ pub struct Session {
     pub question_alert_ms: i64,
     #[serde(default)]
     pub stalled_alert_ms: i64,
+    #[serde(default)]
+    pub missing_alert_ms: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,6 +156,7 @@ pub struct TickFields {
     pub last_alert_ms: i64,
     pub question_alert_ms: i64,
     pub stalled_alert_ms: i64,
+    pub missing_alert_ms: i64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -177,6 +180,7 @@ pub fn apply_tick_fields(state: &mut State, updates: &[TickFields], globals: Glo
             s.last_alert_ms = u.last_alert_ms;
             s.question_alert_ms = u.question_alert_ms;
             s.stalled_alert_ms = u.stalled_alert_ms;
+            s.missing_alert_ms = u.missing_alert_ms;
         }
     }
     state.last_tick_ms = globals.last_tick_ms;
