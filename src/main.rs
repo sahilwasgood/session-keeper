@@ -1368,6 +1368,19 @@ fn main() {
     diagnostics.add(&diag_box);
     outer.add(&diagnostics);
 
+    let help = gtk::Expander::new(Some("Help: shortcuts and terminal commands"));
+    let help_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+    let help_text = gtk::Label::new(Some(
+        "Shortcuts: F5 check now, Ctrl+F focus filter, Ctrl+E export audit, Ctrl+Q quit.\
+Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set-model, --pause/--resume <sid>, --set-prompt <sid> <text>, --set-setting <key> <value>, --export-state/--import-state <path>, --export-audit, --dry-run, --help.",
+    ));
+    help_text.set_xalign(0.0);
+    help_text.set_line_wrap(true);
+    help_text.style_context().add_class("session-meta");
+    help_box.add(&help_text);
+    help.add(&help_box);
+    outer.add(&help);
+
     // Apply worker results on the UI thread.
     let rx_cell = Rc::new(RefCell::new(Some(rx)));
     let st_ui = state.clone();
