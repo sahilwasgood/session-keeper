@@ -1815,14 +1815,20 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
     let filter_watch = filter.clone();
     let attention_watch = attention.clone();
     let summary_watch = summary.clone();
+    let tx_watch = tx.clone();
+    let timer_watch = timer.clone();
+    let busy_watch = busy.clone();
     glib::timeout_add_seconds_local(5, move || {
         let disk = State::load();
-        let changed = {
+        let (changed, old_interval) = {
             let mem = st_watch.borrow();
-            states_differ(&mem, &disk)
+            (states_differ(&mem, &disk), mem.tick_interval_s)
         };
         if changed {
             *st_watch.borrow_mut() = disk.clone();
+            if old_interval != disk.tick_interval_s {
+                arm_timer(&st_watch, &tx_watch, &busy_watch, &timer_watch);
+            }
             pause_watch.set_label(if disk.enabled { "Pause all" } else { "Resume all" });
             // A settings change made by CLI or another process must reach the
             // watchdog workers, not just the GUI's in-memory state.
