@@ -18,7 +18,8 @@ use std::sync::OnceLock;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 static MODEL_TX: OnceLock<Sender<(String, Vec<ModelInfo>)>> = OnceLock::new();
-static KICK_TX: OnceLock<Sender<(String, Result<(), String>)>> = OnceLock::new();
+static KICK_TX: OnceLock<Sender<(String, i64, Result<(), String>)>> = OnceLock::new();
+static ADD_TX: OnceLock<Sender<(String, bool)>> = OnceLock::new();
 static SESSION_TX: OnceLock<Sender<Vec<SessionInfo>>> = OnceLock::new();
 
 #[derive(Clone)]
@@ -569,6 +570,8 @@ fn refresh(
                     let api = Config::api_base();
                     let pw = Config::password();
                     std::thread::spawn(move || {
+                        let now = now_ms();
+                        let ts = open_db().map(|c| last_idle_ts(&c, &sid2)).unwrap_or(now);
                         let result = if Config::dry_run() {
                             Ok(())
                         } else {
@@ -578,7 +581,7 @@ fn refresh(
                             append_history(&sid2, "nudge", &prompt2);
                             log_line(&format!("{}: kicked from UI", sid2));
                         }
-                        let _ = tx2.send((sid2, result));
+                        let _ = tx2.send((sid2, ts, result));
                     });
                 }
                 dlg.close();
@@ -1033,7 +1036,9 @@ fn main() {
     let (model_tx, model_rx) = channel::<(String, Vec<ModelInfo>)>();
     let _ = MODEL_TX.set(model_tx.clone());
     let (switch_tx, switch_rx) = channel::<(String, Result<(), String>)>();
-    let (kick_tx, kick_rx) = channel::<(String, Result<(), String>)>();
+    let (kick_tx, kick_rx) = channel::<(String, i64, Result<(), String>)>();
+    let (add_tx, add_rx) = channel::<(String, bool)>();
+    let _ = ADD_TX.set(add_tx.clone());
     let (session_tx, session_rx) = channel::<Vec<SessionInfo>>();
     let _ = SESSION_TX.set(session_tx.clone());
     let _ = KICK_TX.set(kick_tx.clone());
@@ -1114,28 +1119,26 @@ fn main() {
     let list_add = Rc::new(RefCell::new(gtk::Box::new(gtk::Orientation::Vertical, 2)));
     let views_add = views.clone();
     let filter_add = filter.clone();
-    let attention_add = attention.clone();
     let summary_add = summary.clone();
     let entry_add = entry.clone();
     add.connect_clicked(clone!(@strong st_add, @strong list_add, @strong views_add, @strong filter_add, @strong summary_add, @strong entry_add => move |_| {
         let sid = entry_add.text().trim().to_string();
-        let exists = open_db().map(|c| session_exists(&c, &sid)).unwrap_or(false);
         if !sid.starts_with("ses_") {
             summary_add.set_label("Session id must start with ses_");
-        } else if !exists {
-            summary_add.set_label("Session id not found in OpenCode database");
-        } else if st_add.borrow().sessions.iter().any(|s| s.id == sid) {
-            summary_add.set_label("Session is already watched");
-        } else {
-            st_add.borrow_mut().sessions.push(Session {
-                id: sid, enabled: true, prompt: None, handled: 0, prompted: 0,
-                last_nudge: 0, nudges: 0, last_action: "added".to_string(), idle_streak: 0, last_hash: None, last_status: String::new(), last_alert_ms: 0, question_alert_ms: 0, stalled_alert_ms: 0, missing_alert_ms: 0, failure_alert_ms: 0,
-            });
-            let _ = st_add.borrow().save();
-            entry_add.set_text("");
-            summary_add.set_label("Session added");
-            refresh(&st_add, &list_add.borrow(), &views_add, &filter_add, &attention_add);
+            return;
         }
+        if st_add.borrow().sessions.iter().any(|s| s.id == sid) {
+            summary_add.set_label("Session is already watched");
+            return;
+        }
+        let tx = match ADD_TX.get() { Some(t) => t.clone(), None => return };
+        let check_sid = sid.clone();
+        std::thread::spawn(move || {
+            let exists = open_db().map(|c| session_exists(&c, &check_sid)).unwrap_or(false);
+            let _ = tx.send((check_sid, exists));
+        });
+        entry_add.set_text("");
+        summary_add.set_label("Checking session id...");
     }));
     controls.add(&add);
 
@@ -1530,6 +1533,39 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
         glib::ControlFlow::Continue
     });
 
+    let add_rx_cell = Rc::new(RefCell::new(Some(add_rx)));
+    let st_add_result = state.clone();
+    let list_add_result = list.clone();
+    let views_add_result = views.clone();
+    let filter_add_result = filter.clone();
+    let attention_add_result = attention.clone();
+    let summary_add_result = summary.clone();
+    glib::timeout_add_local(Duration::from_millis(200), move || {
+        if let Some(r) = add_rx_cell.borrow_mut().as_mut() {
+            if let Ok((sid, exists)) = r.try_recv() {
+                if !exists {
+                    summary_add_result.set_label("Session id not found in OpenCode database");
+                } else if !st_add_result.borrow().sessions.iter().any(|s| s.id == sid) {
+                    st_add_result.borrow_mut().sessions.push(Session {
+                        id: sid.clone(),
+                        enabled: true,
+                        prompt: None,
+                        handled: 0,
+                        prompted: 0,
+                        last_nudge: 0,
+                        nudges: 0,
+                        last_action: "added".to_string(),
+                        ..Default::default()
+                    });
+                    let _ = st_add_result.borrow().save();
+                    summary_add_result.set_label(&format!("Added {}", session_keeper_rust::ui::short_id(&sid)));
+                    refresh(&st_add_result, &list_add_result, &views_add_result, &filter_add_result, &attention_add_result);
+                }
+            }
+        }
+        glib::ControlFlow::Continue
+    });
+
     let session_rx_cell = Rc::new(RefCell::new(Some(session_rx)));
     let st_discover = state.clone();
     let list_discover = list.clone();
@@ -1600,14 +1636,13 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
     let st_kick_result = state.clone();
     glib::timeout_add_local(Duration::from_millis(200), move || {
         if let Some(r) = kick_rx_cell.borrow_mut().as_mut() {
-            if let Ok((sid, result)) = r.try_recv() {
+            if let Ok((sid, ts, result)) = r.try_recv() {
                 match result {
                     Ok(()) if Config::dry_run() => summary_kick.set_label(&format!("Dry-run kick for {}", short_id(&sid))),
                     Ok(()) => {
                         let mut st = st_kick_result.borrow_mut();
                         let now = now_ms();
                         if let Some(x) = st.sessions.iter_mut().find(|x| x.id == sid) {
-                            let ts = open_db().map(|c| last_idle_ts(&c, &sid)).unwrap_or(now);
                             x.handled = ts;
                             x.prompted = now;
                             x.last_nudge = now;
