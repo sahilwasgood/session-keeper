@@ -208,3 +208,5 @@ directly; no agent counts are fabricated. See SESSION_HANDOFFS/session-2-subagen
    before any HTTP transport work; keep DB read path in the meantime.
 
 2026-11-22: verified /api/session/{id}/permission and /form response shape {"data":[...]}; used for precise human-input detection instead of text-only question heuristic.
+
+2026-11-22: verified /api/event accepts repeated `types=` query parameters; comma-separated list returns 400. Watcher now filters server-side.

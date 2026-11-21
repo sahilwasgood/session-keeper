@@ -14,3 +14,12 @@ fn unrelated_or_malformed_lines_are_ignored() {
     assert!(!is_relevant_event_line("data: not json"));
     assert!(!is_relevant_event_line(""));
 }
+
+#[test]
+fn event_url_uses_repeated_type_filters() {
+    let url = session_keeper_rust::events::event_url("http://localhost:49374/");
+    assert_eq!(
+        url,
+        "http://localhost:49374/api/event?types=session.idle&types=session.status&types=permission.asked&types=form.created"
+    );
+}

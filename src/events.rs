@@ -36,10 +36,17 @@ fn auth_header(password: &str) -> String {
     format!("Basic {}", out)
 }
 
+pub fn event_url(api: &str) -> String {
+    format!(
+        "{}/api/event?types=session.idle&types=session.status&types=permission.asked&types=form.created",
+        api.trim_end_matches('/')
+    )
+}
+
 /// Streams OpenCode events and sends a wake signal for relevant frames.
 /// Reconnects with a short delay on failures; `stop` ends the loop when set.
 pub fn watch_events(api: &str, password: &str, wake: Sender<()>, stop: Arc<AtomicBool>) {
-    let url = format!("{}/api/event", api.trim_end_matches('/'));
+    let url = event_url(api);
     while !stop.load(Ordering::Relaxed) {
         let request = ureq::get(&url)
             .timeout(Duration::from_secs(30))
