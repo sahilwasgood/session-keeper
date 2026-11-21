@@ -349,7 +349,7 @@ fn launch_tick(
 
 fn today_digest() -> String {
     let now = now_ms();
-    let day_start = now - (now % 86_400_000);
+    let day_start = session_keeper_rust::config::local_day_start_ms(now);
     let nudges = std::fs::read_to_string(Config::history_path())
         .unwrap_or_default()
         .lines()

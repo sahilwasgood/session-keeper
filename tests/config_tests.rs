@@ -23,3 +23,15 @@ fn dry_run_flag_from_env() {
     assert!(Config::dry_run());
     std::env::remove_var("SESSION_KEEPER_DRY_RUN");
 }
+
+#[test]
+fn day_start_matches_local_midnight() {
+    let now = 1_795_248_597_000i64;
+    let start = session_keeper_rust::config::local_day_start_ms(now);
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    let mut secs = (now / 1000) as libc::time_t;
+    unsafe { libc::localtime_r(&mut secs, &mut tm); }
+    let elapsed = (tm.tm_hour as i64 * 3600 + tm.tm_min as i64 * 60 + tm.tm_sec as i64) * 1000;
+    assert_eq!(start, now - elapsed);
+    assert!(start <= now && now - start < 86_400_000);
+}

@@ -37,10 +37,27 @@ pub fn format_utc_time(epoch_secs: i64) -> String {
 
 /// Wall-clock time in the machine's local timezone (localtime_r is thread-safe).
 pub fn format_log_time(epoch_secs: i64) -> String {
+    local_tm(epoch_secs)
+        .map(|tm| format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec))
+        .unwrap_or_else(|| format_utc_time(epoch_secs))
+}
+
+fn local_tm(epoch_secs: i64) -> Option<libc::tm> {
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     let mut secs = epoch_secs as libc::time_t;
-    unsafe { libc::localtime_r(&mut secs, &mut tm); }
-    format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)
+    unsafe { libc::localtime_r(&mut secs, &mut tm).as_ref().copied() }
+}
+
+/// Epoch milliseconds for local midnight, so "today" rolls over at the
+/// operator's clock rather than at 00:00 UTC.
+pub fn local_day_start_ms(now_ms: i64) -> i64 {
+    match local_tm(now_ms / 1000) {
+        Some(tm) => {
+            let elapsed = (tm.tm_hour as i64 * 3600 + tm.tm_min as i64 * 60 + tm.tm_sec as i64) * 1000;
+            now_ms - elapsed
+        }
+        None => now_ms - (now_ms.rem_euclid(86_400_000)),
+    }
 }
 
 impl Config {
