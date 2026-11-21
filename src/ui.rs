@@ -27,6 +27,13 @@ pub fn short_id(id: &str) -> String {
     id.chars().rev().take(12).collect::<Vec<_>>().into_iter().rev().collect()
 }
 
+pub fn prompt_display(prompt: Option<&str>, default_prompt: &str) -> String {
+    match prompt {
+        Some(p) if !p.trim().is_empty() => p.trim().to_string(),
+        _ => format!("default: {}", default_prompt),
+    }
+}
+
 pub fn summary_line(stamp: &str, nudged: i64, held: i64) -> String {
     format!("Last check {}   nudged {}   held {}", stamp, nudged, held)
 }
