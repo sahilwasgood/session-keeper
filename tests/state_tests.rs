@@ -1,0 +1,36 @@
+use session_keeper_rust::state::State;
+use std::path::Path;
+
+#[test]
+fn missing_state_uses_defaults() {
+    let s = State::load_from_path(Path::new("/tmp/nonexistent-sk-state.json"));
+    assert!(s.enabled);
+    assert_eq!(s.default_prompt, "continue, dont stop");
+    assert_eq!(s.min_gap, 10);
+    assert_eq!(s.max_nudges_per_hour, 30);
+    assert!(!s.away_mode);
+    assert!(s.sessions.is_empty());
+}
+
+#[test]
+fn save_then_load_preserves_session_fields() {
+    let mut s = State::default();
+    s.sessions.push(session_keeper_rust::state::Session {
+        id: "ses_test".to_string(),
+        enabled: true,
+        prompt: Some("go on".to_string()),
+        handled: 1000,
+        prompted: 2000,
+        last_nudge: 3000,
+        nudges: 4,
+        last_action: "nudged".to_string(),
+    });
+    let path = Path::new("/tmp/sk-roundtrip-state.json");
+    s.save_to_path(path).unwrap();
+    let loaded = State::load_from_path(path);
+    assert_eq!(loaded.sessions.len(), 1);
+    assert_eq!(loaded.sessions[0].id, "ses_test");
+    assert_eq!(loaded.sessions[0].prompt.as_deref(), Some("go on"));
+    assert_eq!(loaded.sessions[0].nudges, 4);
+    std::fs::remove_file(path).ok();
+}
