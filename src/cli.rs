@@ -20,11 +20,13 @@ pub enum Mode {
 pub struct Options {
     pub mode: Mode,
     pub dry_run: bool,
+    pub json: bool,
 }
 
 pub fn parse_args(args: &[String]) -> Options {
     let mut mode = Mode::Gui;
     let mut dry_run = false;
+    let mut json = false;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -59,6 +61,7 @@ pub fn parse_args(args: &[String]) -> Options {
                 i += need;
             }
             "--dry-run" => dry_run = true,
+            "--json" => json = true,
             "--help" | "-h" => {
                 mode = Mode::Help;
                 break;
@@ -100,7 +103,7 @@ pub fn parse_args(args: &[String]) -> Options {
         }
         i += 1;
     }
-    Options { mode, dry_run }
+    Options { mode, dry_run, json }
 }
 
 pub const HELP: &str = "Session Keeper\nUsage: session-keeper-rust [options]\n\nOptions:\n  (none)                       Open the window and run the watchdog while it is open\n  --check-now                  Run one watchdog tick in the terminal and exit\n  --status                     Print session statuses and exit\n  --kick <session-id>          Send the nudge prompt to one session now\n  --models [filter]            List available models, optionally filtered\n  --set-model <sid> <id> <provider>   Switch one session's model\n  --pause <sid>                Pause one session
@@ -110,4 +113,5 @@ pub const HELP: &str = "Session Keeper\nUsage: session-keeper-rust [options]\n\n
   --version                    Show version
   --export-state <path>        Copy state.json to a backup path
   --export-audit               Write history + log to ~/session-keeper-audit.txt
+  --json                       Machine-readable status output
   --dry-run                    Never send real nudges\n  --help                       Show this help\n";

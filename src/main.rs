@@ -123,6 +123,20 @@ fn tick(state: &Rc<RefCell<State>>) -> String {
                 log_line(&format!("{}: alerted waiting on question", s.id));
             }
         }
+        if status == Status::Stalled {
+            let prev = state.borrow().sessions.iter().find(|x| x.id == s.id)
+                .map(|x| x.last_status.clone()).unwrap_or_default();
+            let last_alert = state.borrow().sessions.iter().find(|x| x.id == s.id)
+                .map(|x| x.last_alert_ms).unwrap_or(0);
+            if status_changed(&prev, &status_name) && now - last_alert > 300_000 {
+                let title = session_title(&conn, &s.id);
+                notify("Session Keeper", &format!("{} is stalled after a nudge", if title.is_empty() { &s.id } else { &title }));
+                if let Some(x) = state.borrow_mut().sessions.iter_mut().find(|x| x.id == s.id) {
+                    x.last_alert_ms = now;
+                }
+                log_line(&format!("{}: alerted stalled after nudge", s.id));
+            }
+        }
         if let Some(x) = state.borrow_mut().sessions.iter_mut().find(|x| x.id == s.id) {
             x.last_status = status_name;
         }
@@ -653,6 +667,23 @@ fn main() {
         Mode::Status => {
             let st = State::load();
             let conn = open_db();
+            if opts.json {
+                let items: Vec<serde_json::Value> = st.sessions.iter().map(|s| {
+                    let status = conn.as_ref().map(|c| classify(c, &s.id, &st)).unwrap_or(Status::Clean);
+                    let model = conn.as_ref().map(|c| session_model(c, &s.id)).unwrap_or_default();
+                    serde_json::json!({
+                        "id": s.id,
+                        "enabled": s.enabled,
+                        "status": status_text(&status),
+                        "reason": reason(&status),
+                        "model": model,
+                        "nudges": s.nudges,
+                        "last_action": s.last_action,
+                    })
+                }).collect();
+                print_line(&serde_json::to_string(&items).unwrap_or_else(|_| "[]".to_string()));
+                return;
+            }
             for s in &st.sessions {
                 let status = conn.as_ref().map(|c| classify(c, &s.id, &st)).unwrap_or(Status::Clean);
                 let model = conn.as_ref().map(|c| session_model(c, &s.id)).unwrap_or_default();

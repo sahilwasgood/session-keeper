@@ -99,3 +99,10 @@ fn export_state_mode_with_path() {
     let bad = parse_args(&args(&["session-keeper-rust", "--export-state"]));
     assert_eq!(bad.mode, Mode::Help);
 }
+
+#[test]
+fn json_flag_for_status() {
+    let o = parse_args(&args(&["session-keeper-rust", "--status", "--json"]));
+    assert_eq!(o.mode, Mode::Status);
+    assert!(o.json);
+}
