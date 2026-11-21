@@ -529,6 +529,62 @@ fn main() {
             }
             return;
         }
+        Mode::Kick(sid) => {
+            let st = State::load();
+            let session = match st.sessions.iter().find(|s| s.id == sid) {
+                Some(s) => s.clone(),
+                None => {
+                    eprintln!("Session {} is not in the watch list", sid);
+                    return;
+                }
+            };
+            let prompt = session.prompt.clone().unwrap_or_else(|| st.default_prompt.clone());
+            let prompt = prompt.trim();
+            let prompt = if prompt.is_empty() { "continue" } else { prompt };
+            if Config::dry_run() {
+                println!("Would kick {} with: {}", sid, prompt);
+                return;
+            }
+            match send_nudge(&Config::api_base(), &Config::password(), &sid, prompt) {
+                Ok(()) => {
+                    append_history(&sid, "nudge", prompt);
+                    log_line(&format!("{}: kicked from CLI", sid));
+                    println!("Kicked {}", sid);
+                }
+                Err(e) => {
+                    eprintln!("Kick failed: {}", e);
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+        Mode::Models(filter) => {
+            let models = fetch_models(&Config::api_base(), &Config::password());
+            let mut shown = 0;
+            for m in models.iter().filter(|m| match &filter {
+                Some(f) => m.id.contains(f) || m.name.contains(f),
+                None => true,
+            }) {
+                println!("{} | {} | {}", m.id, m.provider, m.name);
+                shown += 1;
+                if shown >= 30 { break; }
+            }
+            println!("Total available: {} models (showing {})", models.len(), shown);
+            return;
+        }
+        Mode::SetModel(sid, id, provider) => {
+            match switch_model(&Config::api_base(), &Config::password(), &sid, &id, &provider) {
+                Ok(()) => {
+                    log_line(&format!("{}: model switched to {} ({})", sid, id, provider));
+                    println!("Model switched for {}", sid);
+                }
+                Err(e) => {
+                    eprintln!("Model switch failed: {}", e);
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
         Mode::Gui => {}
     }
 
