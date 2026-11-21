@@ -5,9 +5,10 @@ use session_keeper_rust::cli::{parse_args, Mode, HELP};
 use session_keeper_rust::config::Config;
 use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_title, Status};
 use session_keeper_rust::nudge::{append_history, decide, log_line, notify, nudges_in_last_hour_all, send_nudge, Decision};
+use session_keeper_rust::process::{pid_alive, read_lock};
 use session_keeper_rust::state::{Session, State};
 use session_keeper_rust::safety::{fingerprint, should_nudge_after_debounce};
-use session_keeper_rust::ui::{format_age, matches_filter, prompt_display, short_id, status_class, status_text, summary_line, CSS};
+use session_keeper_rust::ui::{format_age, matches_filter, needs_attention, prompt_display, short_id, status_class, status_priority, status_text, summary_line, CSS};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::Path;
@@ -43,6 +44,9 @@ fn open_db() -> Option<Connection> {
         .ok()
         .and_then(|c| {
             c.busy_timeout(Duration::from_millis(1200)).ok()?;
+            // A locked or unreadable DB must be reported as unavailable, not
+            // silently read as "no events" for every session.
+            c.query_row("SELECT 1 FROM session_message LIMIT 1", [], |_| Ok(())).ok()?;
             Some(c)
         })
 }
@@ -249,6 +253,7 @@ fn refresh(
     list: &gtk::Box,
     views: &Rc<RefCell<HashMap<String, SessionView>>>,
     filter: &Rc<RefCell<String>>,
+    attention: &Rc<RefCell<bool>>,
 ) {
     for child in list.children() {
         list.remove(&child);
@@ -257,8 +262,18 @@ fn refresh(
     let default_prompt = state.borrow().default_prompt.clone();
     let view_map = views.borrow();
     let filter_text = filter.borrow();
-    for s in &sessions {
-        let view = view_map.get(&s.id);
+    let attention_on = *attention.borrow();
+    let mut items: Vec<_> = sessions.iter().map(|s| (s, view_map.get(&s.id))).collect();
+    if attention_on {
+        items.retain(|(_, v)| v.map(|x| needs_attention(&x.status)).unwrap_or(false));
+    }
+    items.sort_by_key(|(s, v)| {
+        let prio = v.map(|x| status_priority(&x.status)).unwrap_or(4);
+        let name = format!("{}{}", v.map(|x| x.title.as_str()).unwrap_or(""), s.id);
+        (prio, name)
+    });
+    for (s, view) in items {
+        let view = view;
         let status = view.map(|v| v.status).unwrap_or(Status::Clean);
         let title = view.map(|v| v.title.as_str()).unwrap_or("");
         if !matches_filter(&s.id, title, &filter_text) { continue; }
@@ -291,13 +306,14 @@ fn refresh(
         let list_c = list.clone();
         let views_c = views.clone();
         let filter_c = filter.clone();
+        let attention_c = attention.clone();
         let sid = s.id.clone();
         pause.connect_clicked(clone!(@strong st, @strong list_c, @strong views_c, @strong sid => move |_| {
             if let Some(x) = st.borrow_mut().sessions.iter_mut().find(|x| x.id == sid) {
                 x.enabled = !x.enabled;
             }
             let _ = st.borrow().save();
-            refresh(&st, &list_c, &views_c, &filter_c);
+            refresh(&st, &list_c, &views_c, &filter_c, &attention_c);
         }));
         top.add(&pause);
         card.add(&top);
@@ -331,10 +347,11 @@ fn refresh(
         let list_c = list.clone();
         let views_c = views.clone();
         let filter_c = filter.clone();
+        let attention_c = attention.clone();
         let sid_edit = s.id.clone();
         let cur = s.prompt.clone();
         edit.connect_clicked(clone!(@strong st, @strong list_c, @strong views_c, @strong sid_edit, @strong cur => move |_| {
-            edit_prompt(&st, &list_c, &views_c, &filter_c, &sid_edit, cur.as_deref());
+            edit_prompt(&st, &list_c, &views_c, &filter_c, &attention_c, &sid_edit, cur.as_deref());
         }));
         actions.add(&edit);
 
@@ -343,6 +360,7 @@ fn refresh(
         let list_c = list.clone();
         let views_c = views.clone();
         let filter_c = filter.clone();
+        let attention_c = attention.clone();
         let sid_del = s.id.clone();
         del.connect_clicked(clone!(@strong st, @strong list_c, @strong views_c, @strong sid_del => move |_| {
             {
@@ -350,7 +368,7 @@ fn refresh(
                 st_mut.sessions.retain(|x| x.id != sid_del);
                 let _ = st_mut.save();
             }
-            refresh(&st, &list_c, &views_c, &filter_c);
+            refresh(&st, &list_c, &views_c, &filter_c, &attention_c);
         }));
         actions.add(&del);
         card.add(&actions);
@@ -370,6 +388,7 @@ fn edit_prompt(
     list: &gtk::Box,
     views: &Rc<RefCell<HashMap<String, SessionView>>>,
     filter: &Rc<RefCell<String>>,
+    attention: &Rc<RefCell<bool>>,
     sid: &str,
     current: Option<&str>,
 ) {
@@ -389,6 +408,7 @@ fn edit_prompt(
     let list_c = list.clone();
     let views_c = views.clone();
     let filter_c = filter.clone();
+    let attention_c = attention.clone();
     let sid = sid.to_string();
     dialog.connect_response(move |dlg, resp| {
         if resp == gtk::ResponseType::Ok {
@@ -400,10 +420,37 @@ fn edit_prompt(
                 }
                 let _ = st_mut.save();
             }
-            refresh(&st, &list_c, &views_c, &filter_c);
+            refresh(&st, &list_c, &views_c, &filter_c, &attention_c);
         }
         dlg.close();
     });
+}
+
+fn arm_timer(
+    state: &Rc<RefCell<State>>,
+    tx: &Sender<TickOutcome>,
+    busy: &Rc<Cell<bool>>,
+    timer: &Rc<RefCell<Option<glib::SourceId>>>,
+) {
+    if let Some(id) = timer.borrow_mut().take() {
+        id.remove();
+    }
+    let interval = state.borrow().tick_interval_s.clamp(5, 300) as u32;
+    let st = state.clone();
+    let tx = tx.clone();
+    let busy = busy.clone();
+    let id = glib::timeout_add_seconds_local(interval, move || {
+        launch_tick(&st, &tx, &busy);
+        glib::ControlFlow::Continue
+    });
+    *timer.borrow_mut() = Some(id);
+}
+
+struct LockGuard(std::path::PathBuf);
+impl Drop for LockGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
 }
 
 fn main() {
@@ -436,6 +483,18 @@ fn main() {
         Mode::Gui => {}
     }
 
+    let lock_path = Config::lock_path();
+    if let Some(pid) = read_lock(&lock_path) {
+        if pid_alive(pid) && pid != std::process::id() as i32 {
+            eprintln!("Session Keeper is already running (pid {}).", pid);
+            return;
+        }
+    }
+    if std::fs::write(&lock_path, std::process::id().to_string()).is_err() {
+        eprintln!("Could not write lock file; continuing without single-instance protection.");
+    }
+    let _lock_guard = LockGuard(lock_path);
+
     gtk::init().expect("GTK3 failed to initialize");
 
     if let Some(screen) = gtk::gdk::Screen::default() {
@@ -451,7 +510,9 @@ fn main() {
     let state = Rc::new(RefCell::new(State::load()));
     let views: Rc<RefCell<HashMap<String, SessionView>>> = Rc::new(RefCell::new(HashMap::new()));
     let filter: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
+    let attention: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
     let busy = Rc::new(Cell::new(false));
+    let timer: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
     let (tx, rx) = channel::<TickOutcome>();
 
     let window = gtk::Window::new(gtk::WindowType::Toplevel);
@@ -511,12 +572,15 @@ fn main() {
     filter_entry.set_placeholder_text(Some("Filter sessions..."));
     filter_entry.set_width_chars(18);
     controls.add(&filter_entry);
+    let attention_cb = gtk::CheckButton::with_label("Attention only");
+    controls.add(&attention_cb);
 
     let add = icon_button("Add session", "list-add-symbolic");
     let st_add = state.clone();
     let list_add = Rc::new(RefCell::new(gtk::Box::new(gtk::Orientation::Vertical, 2)));
     let views_add = views.clone();
     let filter_add = filter.clone();
+    let attention_add = attention.clone();
     let summary_add = summary.clone();
     let entry_add = entry.clone();
     add.connect_clicked(clone!(@strong st_add, @strong list_add, @strong views_add, @strong filter_add, @strong summary_add, @strong entry_add => move |_| {
@@ -529,7 +593,7 @@ fn main() {
             let _ = st_add.borrow().save();
             entry_add.set_text("");
             summary_add.set_label("Session added");
-            refresh(&st_add, &list_add.borrow(), &views_add, &filter_add);
+            refresh(&st_add, &list_add.borrow(), &views_add, &filter_add, &attention_add);
         }
     }));
     controls.add(&add);
@@ -554,13 +618,24 @@ fn main() {
     scroll.add(&list);
     outer.add(&scroll);
 
+    let attention_toggle = attention.clone();
+    let st_att = state.clone();
+    let list_att = list.clone();
+    let views_att = views.clone();
+    let filter_att = filter.clone();
+    attention_cb.connect_toggled(move |b| {
+        *attention_toggle.borrow_mut() = b.is_active();
+        refresh(&st_att, &list_att, &views_att, &filter_att, &attention_toggle);
+    });
+
     let filter_state = filter.clone();
+    let attention_filter = attention.clone();
     let list_filter = list.clone();
     let views_filter = views.clone();
     let st_filter = state.clone();
     filter_entry.connect_changed(move |e| {
         *filter_state.borrow_mut() = e.text().to_string();
-        refresh(&st_filter, &list_filter, &views_filter, &filter_state);
+        refresh(&st_filter, &list_filter, &views_filter, &filter_state, &attention_filter);
     });
 
     // Settings panel from the old web dashboard.
@@ -599,6 +674,12 @@ fn main() {
     let row3 = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     row3.add(&gtk::Label::new(Some("Global nudge cap/hour:")));
     row3.add(&global_cap);
+    row3.add(&gtk::Label::new(Some("Tick interval (s):")));
+    let interval_spin = gtk::SpinButton::new(
+        Some(&gtk::Adjustment::new(state.borrow().tick_interval_s as f64, 5.0, 300.0, 5.0, 30.0, 0.0)),
+        1.0, 0,
+    );
+    row3.add(&interval_spin);
     settings_box.add(&row3);
 
     let enabled_cb = gtk::CheckButton::with_label("Watching enabled (global off switch)");
@@ -614,6 +695,9 @@ fn main() {
     let save_settings = icon_button("Save settings", "document-save-symbolic");
     save_settings.style_context().add_class("suggested-action");
     let st_settings = state.clone();
+    let tx_settings = tx.clone();
+    let busy_settings = busy.clone();
+    let timer_settings = timer.clone();
     save_settings.connect_clicked(move |_| {
         let mut st = st_settings.borrow_mut();
         let p = def_prompt.text().trim().to_string();
@@ -626,6 +710,7 @@ fn main() {
         let _ = st.save();
         std::env::set_var("SESSION_KEEPER_DRY_RUN", if dry_cb.is_active() { "1" } else { "0" });
         std::env::set_var("SESSION_KEEPER_NOTIFY", if notify_cb.is_active() { "1" } else { "0" });
+        arm_timer(&st_settings, &tx_settings, &busy_settings, &timer_settings);
     });
     settings_box.add(&save_settings);
 
@@ -648,6 +733,7 @@ fn main() {
     let list_import = list.clone();
     let views_import = views.clone();
     let filter_import = filter.clone();
+    let attention_import = attention.clone();
     let summary_import = summary.clone();
     import_btn.connect_clicked(move |_| {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/home/mint".to_string());
@@ -660,7 +746,7 @@ fn main() {
                 *st_import.borrow_mut() = new_state;
                 let _ = st_import.borrow().save();
                 summary_import.set_label(&format!("Imported from {}", path.display()));
-                refresh(&st_import, &list_import, &views_import, &filter_import);
+                refresh(&st_import, &list_import, &views_import, &filter_import, &attention_import);
             }
             None => summary_import.set_label("Import failed: no valid export file"),
         }
@@ -680,6 +766,17 @@ fn main() {
     let digest = gtk::Label::new(Some(&today_digest()));
     digest.style_context().add_class("summary");
     diag_box.add(&digest);
+    let audit_btn = icon_button("Export audit (history + log)", "document-save-as-symbolic");
+    audit_btn.connect_clicked(|_| {
+        let history = tail_file(&Config::history_path(), 1000);
+        let log = tail_file(&Config::log_path(), 1000);
+        let text = format!("=== NUDGE HISTORY ===\n{}\n=== KEEPER LOG ===\n{}\n", history, log);
+        match std::fs::write(Config::audit_path(), &text) {
+            Ok(()) => {}
+            Err(e) => log_line(&format!("audit export failed: {}", e)),
+        }
+    });
+    diag_box.add(&audit_btn);
     diag_box.add(&gtk::Label::new(Some("Recent nudges:")));
     diag_box.add(&history_label);
     let log_label = gtk::Label::new(Some(&tail_file(&Config::log_path(), 25)));
@@ -696,6 +793,7 @@ fn main() {
     let st_ui = state.clone();
     let views_ui = views.clone();
     let filter_ui = filter.clone();
+    let attention_ui = attention.clone();
     let summary_ui = summary.clone();
     let busy_ui = busy.clone();
     let list_ui = list.clone();
@@ -713,7 +811,7 @@ fn main() {
                     history_ui.set_label(&tail_file(&Config::history_path(), 25));
                     log_ui.set_label(&tail_file(&Config::log_path(), 25));
                     digest_ui.set_label(&today_digest());
-                    refresh(&st_ui, &list_ui, &views_ui, &filter_ui);
+                    refresh(&st_ui, &list_ui, &views_ui, &filter_ui, &attention_ui);
                     busy_ui.set(false);
                 }
                 Err(TryRecvError::Empty) => {}
@@ -723,28 +821,24 @@ fn main() {
         glib::ControlFlow::Continue
     });
 
-    let st_timer = state.clone();
-    let tx_timer = tx.clone();
-    let busy_timer = busy.clone();
-    glib::timeout_add_seconds_local(30, move || {
-        launch_tick(&st_timer, &tx_timer, &busy_timer);
-        glib::ControlFlow::Continue
-    });
-
     let st_beat = state.clone();
-    let summary_beat = summary.clone();
     let beat_summary = summary.clone();
+    let beat_notified: Rc<RefCell<i64>> = Rc::new(RefCell::new(0));
     glib::timeout_add_seconds_local(10, move || {
         let last = st_beat.borrow().last_tick_ms;
         if last > 0 && now_ms() - last > 120_000 {
             beat_summary.set_label(&format!("WATCHDOG STALE - last tick {}", format_age(last, now_ms())));
-        } else {
-            let _ = &summary_beat;
+            let mut notified = beat_notified.borrow_mut();
+            if now_ms() - *notified > 300_000 {
+                notify("Session Keeper", "Watchdog has not ticked for 2 minutes");
+                *notified = now_ms();
+            }
         }
         glib::ControlFlow::Continue
     });
 
-    refresh(&state, &list, &views, &filter);
+    arm_timer(&state, &tx, &busy, &timer);
+    refresh(&state, &list, &views, &filter, &attention);
     window.show_all();
     launch_tick(&state, &tx, &busy);
     gtk::main();

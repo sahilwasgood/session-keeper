@@ -45,6 +45,20 @@ pub fn format_age(ts_ms: i64, now_ms: i64) -> String {
     if m == 0 { format!("{}h", h) } else { format!("{}h {}m", h, m) }
 }
 
+pub fn needs_attention(status: &Status) -> bool {
+    matches!(status, Status::Due | Status::Waiting | Status::Stalled)
+}
+
+pub fn status_priority(status: &Status) -> i32 {
+    match status {
+        Status::Due => 0,
+        Status::Stalled => 1,
+        Status::Waiting => 2,
+        Status::Nudged => 3,
+        Status::Clean => 4,
+    }
+}
+
 pub fn matches_filter(id: &str, title: &str, filter: &str) -> bool {
     if filter.trim().is_empty() { return true; }
     let f = filter.trim().to_lowercase();

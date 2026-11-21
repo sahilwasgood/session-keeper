@@ -29,6 +29,12 @@ impl Config {
     pub fn history_path() -> PathBuf {
         env_path("SESSION_KEEPER_HISTORY", home().join(".config/session-keeper/history.jsonl"))
     }
+    pub fn lock_path() -> PathBuf {
+        env_path("SESSION_KEEPER_LOCK", home().join(".config/session-keeper/keeper.lock"))
+    }
+    pub fn audit_path() -> PathBuf {
+        env_path("SESSION_KEEPER_AUDIT", home().join("session-keeper-audit.txt"))
+    }
     pub fn log_path() -> PathBuf {
         env_path("SESSION_KEEPER_LOG", home().join("session-keeper.log"))
     }

@@ -22,3 +22,13 @@ fn filter_matches_id_or_title() {
     assert!(session_keeper_rust::ui::matches_filter("ses_abc123", "tg", "abc"));
     assert!(!session_keeper_rust::ui::matches_filter("ses_abc123", "tg", "zzz"));
 }
+
+#[test]
+fn attention_and_priority() {
+    use session_keeper_rust::db::Status;
+    use session_keeper_rust::ui::{needs_attention, status_priority};
+    assert!(needs_attention(&Status::Due));
+    assert!(needs_attention(&Status::Stalled));
+    assert!(!needs_attention(&Status::Clean));
+    assert!(status_priority(&Status::Due) < status_priority(&Status::Clean));
+}

@@ -8,6 +8,7 @@ fn default_prompt() -> String { "continue, dont stop".to_string() }
 fn default_min_gap() -> i64 { 10 }
 fn default_max_nudges() -> i64 { 30 }
 fn default_global_cap() -> i64 { 60 }
+fn default_interval() -> i64 { 30 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
@@ -50,6 +51,8 @@ pub struct State {
     pub sessions: Vec<Session>,
     #[serde(default)]
     pub last_tick_ms: i64,
+    #[serde(default = "default_interval")]
+    pub tick_interval_s: i64,
 }
 
 impl Default for State {
@@ -63,6 +66,7 @@ impl Default for State {
             global_nudge_cap: 60,
             sessions: Vec::new(),
             last_tick_ms: 0,
+            tick_interval_s: 30,
         }
     }
 }
