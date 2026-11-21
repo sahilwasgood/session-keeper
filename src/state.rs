@@ -2,6 +2,14 @@ use crate::config::Config;
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::Path;
+use std::sync::OnceLock;
+
+static CORRUPT_LOAD: OnceLock<()> = OnceLock::new();
+
+/// True when a corrupt state file was backed up and reset this process.
+pub fn state_was_corrupt() -> bool {
+    CORRUPT_LOAD.get().is_some()
+}
 
 fn default_enabled() -> bool { true }
 fn default_prompt() -> String { "continue, dont stop".to_string() }
@@ -143,6 +151,7 @@ impl State {
         match State::from_json(&text) {
             Ok(s) => s,
             Err(_) => {
+                let _ = CORRUPT_LOAD.set(());
                 let stamp = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.as_nanos())

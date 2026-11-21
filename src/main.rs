@@ -732,6 +732,12 @@ fn main() {
     let raw: Vec<String> = std::env::args().collect();
     let opts = parse_args(&raw);
     let boot_state = State::load();
+    if session_keeper_rust::state::state_was_corrupt() {
+        let msg = "State file was corrupt: a timestamped backup was saved and defaults were loaded";
+        eprintln!("session-keeper: {}", msg);
+        log_line(msg);
+        let _ = notify("Session Keeper", msg);
+    }
     if std::env::var_os("SESSION_KEEPER_DRY_RUN").is_none() {
         std::env::set_var(
             "SESSION_KEEPER_DRY_RUN",

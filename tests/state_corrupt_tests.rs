@@ -16,6 +16,7 @@ fn corrupt_json_returns_defaults_and_keeps_backup() {
     let s = State::load_from_path(&path);
     assert!(s.sessions.is_empty());
     assert!(s.enabled);
+    assert!(session_keeper_rust::state::state_was_corrupt(), "corrupt load must be reported");
     let backups: Vec<_> = std::fs::read_dir(&d)
         .unwrap()
         .filter_map(|e| e.ok())

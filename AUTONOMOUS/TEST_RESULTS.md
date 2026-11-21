@@ -62,3 +62,5 @@ Toolbar pause label drift fixed: the Settings bulk button shadowed the toolbar t
 Worker error handling (R-012): launch_tick wraps run_tick in catch_unwind; a panic now sends an error outcome, the GUI surfaces it in the summary and resets busy so Check now stays usable. Disconnected channel also resets busy and logs. Normal Check now verified via AT-SPI (summary timestamp advanced); all 29 binaries green.
 
 R-008: notify() now checks notify-send availability once (cached), logs a single warning when the transport is missing, and returns bool. GUI Test notification shows a dedicated persistent label ("Test notification sent" verified via AT-SPI); previously feedback was overwritten by the next tick on the shared summary label. Added cached-availability test; 29 binaries green.
+
+R-009: State::load_from_path sets a process-global corrupt flag; main() logs + eprints + notifies once at startup. Verified with an isolated SESSION_KEEPER_STATE corrupt file: stderr warning, log line, timestamped backup preserved. Added assertion in state_corrupt_tests. 29 binaries green.
