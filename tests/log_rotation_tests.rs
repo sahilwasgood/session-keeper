@@ -1,4 +1,4 @@
-use session_keeper_rust::config::format_log_time;
+use session_keeper_rust::config::{format_log_time, format_utc_time};
 use session_keeper_rust::nudge::rotate_text;
 
 fn lines(n: usize) -> String {
@@ -70,27 +70,41 @@ fn under_max_preserves_trailing_newline() {
 
 #[test]
 fn log_time_midnight() {
-    assert_eq!(format_log_time(0), "00:00:00");
+    assert_eq!(format_utc_time(0), "00:00:00");
 }
 
 #[test]
 fn log_time_end_of_day() {
-    assert_eq!(format_log_time(86_399), "23:59:59");
+    assert_eq!(format_utc_time(86_399), "23:59:59");
 }
 
 #[test]
 fn log_time_wraps_each_day() {
-    assert_eq!(format_log_time(86_400), "00:00:00");
+    assert_eq!(format_utc_time(86_400), "00:00:00");
 }
 
 #[test]
 fn log_time_negative_wraps() {
-    assert_eq!(format_log_time(-1), "23:59:59");
+    assert_eq!(format_utc_time(-1), "23:59:59");
 }
 
 #[test]
 fn log_time_hours_minutes_seconds() {
-    assert_eq!(format_log_time(3661), "01:01:01");
+    assert_eq!(format_utc_time(3661), "01:01:01");
+}
+
+fn local_hms(epoch: i64) -> String {
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    let mut secs = epoch as libc::time_t;
+    unsafe { libc::localtime_r(&mut secs, &mut tm); }
+    format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)
+}
+
+#[test]
+fn log_time_uses_machine_local_timezone() {
+    for epoch in [0i64, 1_795_248_597, 1_700_000_000, -1] {
+        assert_eq!(format_log_time(epoch), local_hms(epoch));
+    }
 }
 
 #[test]

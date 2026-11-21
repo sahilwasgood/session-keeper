@@ -2,7 +2,7 @@ use glib::clone;
 use gtk::prelude::*;
 use rusqlite::{Connection, OpenFlags};
 use session_keeper_rust::cli::{parse_args, Mode, HELP};
-use session_keeper_rust::config::Config;
+use session_keeper_rust::config::{load_env_file, Config};
 use session_keeper_rust::events::watch_events;
 use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_exists, session_model, session_title, Status};
 use session_keeper_rust::nudge::{append_history, decide, fetch_models, fetch_sessions, has_pending_human_input, log_line, notify, nudges_in_last_hour_all, send_nudge, switch_model, Decision, ModelInfo, SessionInfo};
@@ -729,6 +729,7 @@ impl Drop for LockGuard {
 }
 
 fn main() {
+    load_env_file();
     let raw: Vec<String> = std::env::args().collect();
     let opts = parse_args(&raw);
     let boot_state = State::load();

@@ -1,10 +1,10 @@
-use session_keeper_rust::config::{format_log_time, Config};
+use session_keeper_rust::config::{format_log_time, format_utc_time, Config};
 use std::path::PathBuf;
 
 #[test]
 fn log_time_is_readable_utc() {
     // 2026-11-21 08:09:57 UTC
-    assert_eq!(format_log_time(1795248597), "08:09:57");
+    assert_eq!(format_utc_time(1795248597), "08:09:57");
 }
 
 #[test]

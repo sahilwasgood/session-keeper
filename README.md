@@ -36,18 +36,33 @@ session-keeper-rust                       open the GUI
 --version | --help
 ```
 
-## Environment overrides
+## Configuration
 
-`SESSION_KEEPER_DB`, `SESSION_KEEPER_DRIVE`, `SESSION_KEEPER_STATE`, `SESSION_KEEPER_HISTORY`, `SESSION_KEEPER_LOG`, `SESSION_KEEPER_API`, `SESSION_KEEPER_SERVICE_JSON`, `SESSION_KEEPER_LOCK`, `SESSION_KEEPER_AUDIT`, `SESSION_KEEPER_DRY_RUN`, `SESSION_KEEPER_NOTIFY`.
+Defaults follow a standard OpenCode install: database `~/.local/share/opencode/opencode.db`, server `http://127.0.0.1:4096`, credentials `~/.config/opencode/service.json`, and app state under `~/.config/session-keeper/`. No setup is needed if OpenCode is installed in the usual locations.
+
+To override any path or the API address, put `KEY=value` lines in `~/.config/session-keeper/env` (one per line, `#` comments allowed). Real environment variables take precedence. Available keys: `SESSION_KEEPER_DB`, `SESSION_KEEPER_DRIVE`, `SESSION_KEEPER_STATE`, `SESSION_KEEPER_HISTORY`, `SESSION_KEEPER_LOG`, `SESSION_KEEPER_API`, `SESSION_KEEPER_SERVICE_JSON`, `SESSION_KEEPER_LOCK`, `SESSION_KEEPER_AUDIT`, `SESSION_KEEPER_DRY_RUN`, `SESSION_KEEPER_NOTIFY`.
 
 ## Files
 
-State and history live in `~/.config/session-keeper/`; shared with the old Python keeper's data so watched sessions survived the migration. The Python files and systemd units were removed on 2026-11-21.
+State and history live in `~/.config/session-keeper/`. Nothing runs at boot and no background daemon is installed. Log and history files rotate automatically. The compiled binary is self-contained; no runtime data files ship with it.
 
-## Build
+## Build from source
+
+Linux with GTK3 development headers is required:
 
 ```
+sudo apt-get install libgtk-3-dev libglib2.0-dev pkg-config
 cargo test
 cargo build --release
 install -m 755 target/release/session-keeper-rust ~/.local/bin/session-keeper-rust
 ```
+
+CI runs the full test suite and a release build on every push and pull request.
+
+## Project notes
+
+The `AUTONOMOUS/` directory holds development-time task boards, research, and handoff notes. It is not required to build or run the application.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
