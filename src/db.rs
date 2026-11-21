@@ -100,6 +100,13 @@ pub fn last_idle_ts(conn: &Connection, sid: &str) -> i64 {
     .unwrap_or(0)
 }
 
+/// True when an assistant message is waiting on the operator's answer.
+/// Assistant text often carries a trailing newline, so trim before checking.
+pub fn is_question(text: &str) -> bool {
+    let t = text.trim_end();
+    t.ends_with('?') || t.ends_with('？')
+}
+
 pub fn classify(conn: &Connection, sid: &str, state: &State) -> Status {
     let fallback = Session {
         id: sid.to_string(),
@@ -123,13 +130,13 @@ pub fn classify(conn: &Connection, sid: &str, state: &State) -> Status {
         return Status::Nudged;
     }
     let (ast, text) = last_assistant(conn, sid);
-    if state.away_mode && text.ends_with('?') {
+    if state.away_mode && is_question(&text) {
         return Status::Waiting;
     }
     if sess.prompted > 0 && ast <= sess.prompted {
         return Status::Stalled;
     }
-    if text.ends_with('?') {
+    if is_question(&text) {
         return Status::Waiting;
     }
     if ast == 0 {

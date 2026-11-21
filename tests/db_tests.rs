@@ -1,5 +1,5 @@
 use rusqlite::Connection;
-use session_keeper_rust::db::{classify, Status};
+use session_keeper_rust::db::{classify, is_question, Status};
 use session_keeper_rust::state::{Session, State};
 
 fn session() -> Session {
@@ -42,6 +42,26 @@ fn assistant(text: &str) -> String {
 fn assistant_question_is_waiting() {
     let conn = fixture(&[
         ("assistant", "ses_test", 900, &assistant("Which file should I edit?")),
+        ("idle", "ses_test", 1000, r#"{}"#),
+    ]);
+    assert_eq!(classify(&conn, "ses_test", &State::default()), Status::Waiting);
+}
+
+#[test]
+fn question_detection_trims_and_handles_fullwidth_mark() {
+    assert!(is_question("Which file?"));
+    assert!(is_question("Which file?\n"));
+    assert!(is_question("Which file？"));
+    assert!(is_question("Which file？  \n"));
+    assert!(!is_question("Which file"));
+    assert!(!is_question(""));
+    assert!(!is_question("? but then more text"));
+}
+
+#[test]
+fn question_with_trailing_newline_is_waiting() {
+    let conn = fixture(&[
+        ("assistant", "ses_test", 900, &assistant("Which file should I edit?\n")),
         ("idle", "ses_test", 1000, r#"{}"#),
     ]);
     assert_eq!(classify(&conn, "ses_test", &State::default()), Status::Waiting);
