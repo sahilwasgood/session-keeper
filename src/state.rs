@@ -151,13 +151,16 @@ impl State {
         match State::from_json(&text) {
             Ok(s) => s,
             Err(_) => {
-                let _ = CORRUPT_LOAD.set(());
-                let stamp = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_nanos())
-                    .unwrap_or(0);
-                let backup = std::path::PathBuf::from(format!("{}.corrupt-{}", path.display(), stamp));
-                let _ = std::fs::copy(path, backup);
+                // Only the first load backs up the file; later loads in the same
+                // process would otherwise pile up identical corrupt backups.
+                if CORRUPT_LOAD.set(()).is_ok() {
+                    let stamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_nanos())
+                        .unwrap_or(0);
+                    let backup = std::path::PathBuf::from(format!("{}.corrupt-{}", path.display(), stamp));
+                    let _ = std::fs::copy(path, backup);
+                }
                 State::default()
             }
         }
