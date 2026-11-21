@@ -807,7 +807,24 @@ fn main() {
         Mode::CheckNow => {
             let st = Rc::new(RefCell::new(State::load()));
             let out = run_tick(st.borrow().clone(), true);
-            print_line(&format!("{}", out.summary));
+            if opts.json {
+                let views: Vec<serde_json::Value> = out.views.iter().map(|(id, v)| {
+                    serde_json::json!({
+                        "id": id,
+                        "status": status_text(&v.status),
+                        "reason": v.reason,
+                        "exists": v.exists,
+                    })
+                }).collect();
+                let payload = serde_json::json!({
+                    "summary": out.summary,
+                    "cap_remaining": out.globals.cap_remaining,
+                    "views": views,
+                });
+                print_line(&serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()));
+            } else {
+                print_line(&format!("{}", out.summary));
+            }
             return;
         }
         Mode::Status => {

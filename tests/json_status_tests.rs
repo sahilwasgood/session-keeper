@@ -116,3 +116,24 @@ fn json_output_is_a_single_line() {
     assert!(!body.contains('\n'), "compact JSON must not be pretty printed");
     std::fs::remove_dir_all(&d).ok();
 }
+
+#[test]
+fn check_now_json_is_valid_with_expected_shape() {
+    let d = dir("checknow");
+    let state = d.join("state.json");
+    std::fs::write(&state, r#"{"sessions":[]}"#).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_session-keeper-rust"))
+        .args(["--check-now", "--json", "--dry-run"])
+        .env("SESSION_KEEPER_STATE", &state)
+        .env("SESSION_KEEPER_DB", d.join("no-db.db"))
+        .env("SESSION_KEEPER_DRIVE", &d)
+        .env("SESSION_KEEPER_LOCK", d.join("keeper.lock"))
+        .env("SESSION_KEEPER_API", "http://127.0.0.1:1")
+        .output().unwrap();
+    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    let parsed: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(parsed.get("summary").and_then(|v| v.as_str()).is_some());
+    assert!(parsed.get("cap_remaining").and_then(|v| v.as_i64()).is_some());
+    assert!(parsed.get("views").and_then(|v| v.as_array()).is_some());
+    std::fs::remove_dir_all(&d).ok();
+}

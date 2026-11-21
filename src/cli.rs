@@ -154,7 +154,7 @@ Options:
   --export-state <path>             Copy state.json to a backup path
   --import-state <path>             Restore state.json from a backup
   --export-audit                    Write history + log to ~/session-keeper-audit.txt
-  --json                            Machine-readable status output
+  --json                            Machine-readable output for --status / --check-now
   --dry-run                         Never send real nudges
   --help                            Show this help
 ";

@@ -27,7 +27,7 @@ A small on-demand watchdog for OpenCode sessions. Nothing runs at boot. Open the
 
 ```
 session-keeper-rust                       open the GUI
---check-now                               one watchdog tick
+--check-now [--json]                      one watchdog tick, optionally machine-readable
 --status [--json]                         session statuses, optionally machine-readable
 --doctor                                  check database, credentials, API and notifier
 --watch                                   continuous terminal watchdog

@@ -16,6 +16,7 @@
 - Daily nudge digest rolls over at local midnight instead of 00:00 UTC.
 - A database outage no longer refreshes the watchdog heartbeat, so the stale-watchdog alert fires as intended.
 - New `--doctor` command reports database, credentials, notifier, and API reachability.
+- `--check-now --json` emits a machine-readable tick result with summary, cap remaining, and per-session views.
 
 ## v0.1.0 (2026-11-22)
 
