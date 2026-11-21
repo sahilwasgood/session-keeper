@@ -158,6 +158,12 @@ fn tick(state: &Rc<RefCell<State>>) -> String {
 
         if global_cap > 0 && used_global >= global_cap {
             log_line(&format!("{}: hold global cap {}/{}", s.id, used_global, global_cap));
+            let last_alert = state.borrow().cap_alert_ms;
+            if now - last_alert > 3_600_000 {
+                notify("Session Keeper", &format!("Global nudge cap reached ({}/hour)", global_cap));
+                state.borrow_mut().cap_alert_ms = now;
+                let _ = state.borrow().save();
+            }
             held += 1;
             continue;
         }
@@ -549,6 +555,7 @@ fn main() {
     if opts.dry_run {
         std::env::set_var("SESSION_KEEPER_DRY_RUN", "1");
     }
+    let resume_mode = matches!(&opts.mode, Mode::Resume(_));
     match opts.mode {
         Mode::Help => {
             print!("{}", HELP);
@@ -567,6 +574,37 @@ fn main() {
                 let status = conn.as_ref().map(|c| classify(c, &s.id, &st)).unwrap_or(Status::Clean);
                 println!("{}  {}  {}  nudges={}  last={}", short_id(&s.id), s.id,
                     status_text(&status), s.nudges, s.last_action);
+            }
+            return;
+        }
+        Mode::Pause(sid) | Mode::Resume(sid) => {
+            let mut st = State::load();
+            let enable = resume_mode;
+            match st.sessions.iter_mut().find(|s| s.id == sid) {
+                Some(s) => {
+                    s.enabled = enable;
+                    let _ = st.save();
+                    println!("{} {}", sid, if enable { "resumed" } else { "paused" });
+                }
+                None => {
+                    eprintln!("Session {} is not in the watch list", sid);
+                    std::process::exit(1);
+                }
+            }
+            return;
+        }
+        Mode::SetPrompt(sid, text) => {
+            let mut st = State::load();
+            match st.sessions.iter_mut().find(|s| s.id == sid) {
+                Some(s) => {
+                    s.prompt = if text.trim().is_empty() { None } else { Some(text.trim().to_string()) };
+                    let _ = st.save();
+                    println!("Prompt set for {}", sid);
+                }
+                None => {
+                    eprintln!("Session {} is not in the watch list", sid);
+                    std::process::exit(1);
+                }
             }
             return;
         }

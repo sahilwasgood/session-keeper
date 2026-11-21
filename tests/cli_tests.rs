@@ -62,3 +62,26 @@ fn export_audit_mode() {
     let o = parse_args(&args(&["session-keeper-rust", "--export-audit"]));
     assert_eq!(o.mode, Mode::ExportAudit);
 }
+
+#[test]
+fn pause_and_resume_modes() {
+    assert_eq!(
+        parse_args(&args(&["session-keeper-rust", "--pause", "ses_a"])).mode,
+        Mode::Pause("ses_a".to_string())
+    );
+    assert_eq!(
+        parse_args(&args(&["session-keeper-rust", "--resume", "ses_a"])).mode,
+        Mode::Resume("ses_a".to_string())
+    );
+}
+
+#[test]
+fn set_prompt_mode() {
+    let o = parse_args(&args(&[
+        "session-keeper-rust", "--set-prompt", "ses_a", "keep working",
+    ]));
+    assert_eq!(
+        o.mode,
+        Mode::SetPrompt("ses_a".to_string(), "keep working".to_string())
+    );
+}

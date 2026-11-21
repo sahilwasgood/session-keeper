@@ -62,6 +62,8 @@ pub struct State {
     pub persist_dry_run: bool,
     #[serde(default = "default_true")]
     pub persist_notifications: bool,
+    #[serde(default)]
+    pub cap_alert_ms: i64,
 }
 
 impl Default for State {
@@ -78,6 +80,7 @@ impl Default for State {
             tick_interval_s: 30,
             persist_dry_run: false,
             persist_notifications: true,
+            cap_alert_ms: 0,
         }
     }
 }
