@@ -2,7 +2,7 @@ use std::io::{BufRead, BufReader};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// True for SSE data frames that mean a session may need attention.
 pub fn is_relevant_event_line(line: &str) -> bool {
@@ -47,6 +47,8 @@ pub fn event_url(api: &str) -> String {
 /// Reconnects with a short delay on failures; `stop` ends the loop when set.
 pub fn watch_events(api: &str, password: &str, wake: Sender<()>, stop: Arc<AtomicBool>) {
     let url = event_url(api);
+    let mut was_connected = false;
+    let mut last_error: Option<Instant> = None;
     while !stop.load(Ordering::Relaxed) {
         let request = ureq::get(&url)
             .timeout(Duration::from_secs(30))
@@ -54,6 +56,11 @@ pub fn watch_events(api: &str, password: &str, wake: Sender<()>, stop: Arc<Atomi
             .set("Accept", "text/event-stream");
         match request.call() {
             Ok(response) => {
+                if !was_connected {
+                    crate::nudge::log_line("event stream connected");
+                    was_connected = true;
+                    last_error = None;
+                }
                 let reader = BufReader::new(response.into_reader());
                 for line in reader.lines() {
                     if stop.load(Ordering::Relaxed) {
@@ -70,7 +77,17 @@ pub fn watch_events(api: &str, password: &str, wake: Sender<()>, stop: Arc<Atomi
                     }
                 }
             }
-            Err(_) => {}
+            Err(e) => {
+                if was_connected {
+                    crate::nudge::log_line("event stream disconnected");
+                    was_connected = false;
+                }
+                let now = Instant::now();
+                if last_error.map(|t| now.duration_since(t) >= Duration::from_secs(60)).unwrap_or(true) {
+                    crate::nudge::log_line(&format!("event stream retry: {}", e));
+                    last_error = Some(now);
+                }
+            }
         }
         if stop.load(Ordering::Relaxed) {
             break;

@@ -52,3 +52,5 @@ AT-SPI regression pass: filter field reduced visible session cards 9 -> 1 -> 9; 
 Event-driven wakeups: SSE /api/event parsed {"type":...} frames; watcher thread signals tick on session.idle/status/permission.asked/form.created, with stop flag on window close. Verified no runaway ticking (0 log lines in 20s between events) and 30s fallback still ticking (9 lines in 35s). 29 test binaries green.
 
 SSE filter verified; 29 test binaries green with event_url regression test.
+
+SSE observability: connection/disconnection logged once, retry errors throttled to once per minute; live restart logged "event stream connected".
