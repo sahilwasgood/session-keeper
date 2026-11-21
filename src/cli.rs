@@ -17,6 +17,7 @@ pub enum Mode {
     ImportState(String),
     SetSetting(String, String),
     Sessions,
+    Doctor,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,6 +56,7 @@ pub fn parse_args(args: &[String]) -> Options {
             }
             "--watch" => mode = Mode::Watch,
             "--version" => mode = Mode::Version,
+            "--doctor" => mode = Mode::Doctor,
             "--export-state" | "--import-state" => {
                 let flag = args[i].clone();
                 if i + 1 < args.len() && valid_value(&args[i + 1]) {
@@ -148,6 +150,7 @@ Options:
   --set-setting <key> <value>       Change min_gap, cap, global_cap, interval, cooldown, away, enabled, dry_run, notify
   --watch                           Print status every tick in the terminal
   --version                         Show version
+  --doctor                          Check database, credentials, API and notifier
   --export-state <path>             Copy state.json to a backup path
   --import-state <path>             Restore state.json from a backup
   --export-audit                    Write history + log to ~/session-keeper-audit.txt

@@ -848,6 +848,20 @@ fn main() {
             print_line(&format!("Session Keeper {} (Rust)", env!("CARGO_PKG_VERSION")));
             return;
         }
+        Mode::Doctor => {
+            print_line(&format!("Session Keeper {} (Rust)", env!("CARGO_PKG_VERSION")));
+            let db = Config::db_path();
+            print_line(&format!("database: {} [{}]", db.display(), if db.exists() { "ok" } else { "MISSING" }));
+            let svc = Config::services_json();
+            print_line(&format!("credentials: {} [{}]", svc.display(), if svc.exists() { "ok" } else { "MISSING" }));
+            print_line(&format!("notifier: {}", if notify_send_available() { "notify-send ok" } else { "MISSING notify-send" }));
+            print_line(&format!("api: {}", Config::api_base()));
+            match fetch_sessions_result(&Config::api_base(), &Config::password()) {
+                Ok(sessions) => print_line(&format!("api status: reachable ({} sessions)", sessions.len())),
+                Err(e) => print_line(&format!("api status: UNREACHABLE ({})", e)),
+            }
+            return;
+        }
         Mode::ExportState(path) => {
             let st = State::load();
             match std::fs::write(&path, serde_json::to_string_pretty(&st).unwrap_or_default()) {

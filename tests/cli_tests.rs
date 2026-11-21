@@ -149,3 +149,9 @@ fn help_lists_all_implemented_flags() {
     assert!(help.contains("--set-setting"));
     assert!(help.contains("--sessions"));
 }
+
+#[test]
+fn doctor_mode() {
+    let o = parse_args(&args(&["session-keeper-rust", "--doctor"]));
+    assert_eq!(o.mode, Mode::Doctor);
+}
