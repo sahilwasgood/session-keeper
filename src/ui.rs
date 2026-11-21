@@ -45,6 +45,10 @@ pub fn format_age(ts_ms: i64, now_ms: i64) -> String {
     if m == 0 { format!("{}h", h) } else { format!("{}h {}m", h, m) }
 }
 
+pub fn status_changed(prev: &str, next: &str) -> bool {
+    prev != next
+}
+
 pub fn needs_attention(status: &Status) -> bool {
     matches!(status, Status::Due | Status::Waiting | Status::Stalled)
 }

@@ -31,6 +31,10 @@ pub struct Session {
     pub idle_streak: i32,
     #[serde(default)]
     pub last_hash: Option<String>,
+    #[serde(default)]
+    pub last_status: String,
+    #[serde(default)]
+    pub last_alert_ms: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

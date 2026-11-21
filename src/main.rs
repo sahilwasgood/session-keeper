@@ -3,12 +3,12 @@ use gtk::prelude::*;
 use rusqlite::{Connection, OpenFlags};
 use session_keeper_rust::cli::{parse_args, Mode, HELP};
 use session_keeper_rust::config::Config;
-use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_title, Status};
+use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_exists, session_title, Status};
 use session_keeper_rust::nudge::{append_history, decide, log_line, notify, nudges_in_last_hour_all, send_nudge, Decision};
 use session_keeper_rust::process::{pid_alive, read_lock};
 use session_keeper_rust::state::{Session, State};
 use session_keeper_rust::safety::{fingerprint, should_nudge_after_debounce};
-use session_keeper_rust::ui::{format_age, matches_filter, needs_attention, prompt_display, short_id, status_class, status_priority, status_text, summary_line, CSS};
+use session_keeper_rust::ui::{format_age, matches_filter, needs_attention, prompt_display, short_id, status_changed, status_class, status_priority, status_text, summary_line, CSS};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::Path;
@@ -23,6 +23,7 @@ struct SessionView {
     progress_ms: i64,
     idle_ms: i64,
     reason: String,
+    exists: bool,
 }
 
 struct TickOutcome {
@@ -91,6 +92,25 @@ fn tick(state: &Rc<RefCell<State>>) -> String {
             let decision = decide(&st, s, &status, now);
             (status, decision)
         };
+
+        let status_name = format!("{:?}", status);
+        if status == Status::Waiting {
+            let prev = state.borrow().sessions.iter().find(|x| x.id == s.id)
+                .map(|x| x.last_status.clone()).unwrap_or_default();
+            let last_alert = state.borrow().sessions.iter().find(|x| x.id == s.id)
+                .map(|x| x.last_alert_ms).unwrap_or(0);
+            if status_changed(&prev, &status_name) && now - last_alert > 300_000 {
+                let title = session_title(&conn, &s.id);
+                notify("Session Keeper", &format!("{} asked a question", if title.is_empty() { &s.id } else { &title }));
+                if let Some(x) = state.borrow_mut().sessions.iter_mut().find(|x| x.id == s.id) {
+                    x.last_alert_ms = now;
+                }
+                log_line(&format!("{}: alerted waiting on question", s.id));
+            }
+        }
+        if let Some(x) = state.borrow_mut().sessions.iter_mut().find(|x| x.id == s.id) {
+            x.last_status = status_name;
+        }
 
         if decision != Decision::Nudge {
             if status != Status::Due {
@@ -196,7 +216,8 @@ fn run_tick(snapshot: State) -> TickOutcome {
                 title: session_title(&conn, &s.id),
                 progress_ms: last_assistant_ts(&conn, &s.id),
                 idle_ms: last_idle_ts(&conn, &s.id),
-                reason: reason(&status).to_string(),
+                reason: if session_exists(&conn, &s.id) { reason(&status).to_string() } else { "missing_from_opencode".to_string() },
+                exists: session_exists(&conn, &s.id),
             };
             views.insert(s.id.clone(), view);
         }
@@ -287,6 +308,10 @@ fn refresh(
         badge.style_context().add_class(status_class(&status));
         badge.set_size_request(118, -1);
         if let Some(v) = view { badge.set_tooltip_text(Some(&v.reason)); }
+        if view.map(|v| !v.exists).unwrap_or(false) {
+            badge.set_label("missing");
+            badge.style_context().add_class("badge-stalled");
+        }
         top.add(&badge);
 
         let name = if title.is_empty() {
@@ -588,7 +613,7 @@ fn main() {
         if sid.starts_with("ses_") && !st_add.borrow().sessions.iter().any(|s| s.id == sid) {
             st_add.borrow_mut().sessions.push(Session {
                 id: sid, enabled: true, prompt: None, handled: 0, prompted: 0,
-                last_nudge: 0, nudges: 0, last_action: "added".to_string(), idle_streak: 0, last_hash: None,
+                last_nudge: 0, nudges: 0, last_action: "added".to_string(), idle_streak: 0, last_hash: None, last_status: String::new(), last_alert_ms: 0,
             });
             let _ = st_add.borrow().save();
             entry_add.set_text("");
@@ -713,6 +738,33 @@ fn main() {
         arm_timer(&st_settings, &tx_settings, &busy_settings, &timer_settings);
     });
     settings_box.add(&save_settings);
+
+    let bulk_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    let pause_all = icon_button("Pause all", "media-playback-pause-symbolic");
+    let st_pause = state.clone();
+    let list_pause = list.clone();
+    let views_pause = views.clone();
+    let filter_pause = filter.clone();
+    let attention_pause = attention.clone();
+    pause_all.connect_clicked(move |_| {
+        for s in st_pause.borrow_mut().sessions.iter_mut() { s.enabled = false; }
+        let _ = st_pause.borrow().save();
+        refresh(&st_pause, &list_pause, &views_pause, &filter_pause, &attention_pause);
+    });
+    bulk_row.add(&pause_all);
+    let resume_all = icon_button("Resume all", "media-playback-start-symbolic");
+    let st_resume = state.clone();
+    let list_resume = list.clone();
+    let views_resume = views.clone();
+    let filter_resume = filter.clone();
+    let attention_resume = attention.clone();
+    resume_all.connect_clicked(move |_| {
+        for s in st_resume.borrow_mut().sessions.iter_mut() { s.enabled = true; }
+        let _ = st_resume.borrow().save();
+        refresh(&st_resume, &list_resume, &views_resume, &filter_resume, &attention_resume);
+    });
+    bulk_row.add(&resume_all);
+    settings_box.add(&bulk_row);
 
     let io_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let export_btn = icon_button("Export settings", "document-save-as-symbolic");

@@ -32,3 +32,9 @@ fn attention_and_priority() {
     assert!(!needs_attention(&Status::Clean));
     assert!(status_priority(&Status::Due) < status_priority(&Status::Clean));
 }
+
+#[test]
+fn status_change_detection() {
+    assert!(session_keeper_rust::ui::status_changed("working", "waiting"));
+    assert!(!session_keeper_rust::ui::status_changed("waiting", "waiting"));
+}

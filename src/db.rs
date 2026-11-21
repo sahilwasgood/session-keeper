@@ -54,6 +54,13 @@ fn last_assistant(conn: &Connection, sid: &str) -> (i64, String) {
     }
 }
 
+pub fn session_exists(conn: &Connection, sid: &str) -> bool {
+    conn.query_row("SELECT 1 FROM session_v2 WHERE id=?1", [sid], |_| Ok(()))
+        .optional()
+        .unwrap_or(None)
+        .is_some()
+}
+
 pub fn last_assistant_ts(conn: &Connection, sid: &str) -> i64 {
     last_assistant(conn, sid).0
 }
@@ -91,7 +98,7 @@ pub fn classify(conn: &Connection, sid: &str, state: &State) -> Status {
         prompted: 0,
         last_nudge: 0,
         nudges: 0,
-        last_action: String::new(), idle_streak: 0, last_hash: None,
+        last_action: String::new(), idle_streak: 0, last_hash: None, last_status: String::new(), last_alert_ms: 0,
     };
     let sess = state.sessions.iter().find(|s| s.id == sid).unwrap_or(&fallback);
     if !sess.enabled {

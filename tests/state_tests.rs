@@ -23,7 +23,7 @@ fn save_then_load_preserves_session_fields() {
         prompted: 2000,
         last_nudge: 3000,
         nudges: 4,
-        last_action: "nudged".to_string(), idle_streak: 0, last_hash: None,
+        last_action: "nudged".to_string(), idle_streak: 0, last_hash: None, last_status: String::new(), last_alert_ms: 0,
     });
     let path = Path::new("/tmp/sk-roundtrip-state.json");
     s.save_to_path(path).unwrap();
