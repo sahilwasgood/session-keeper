@@ -29,3 +29,38 @@ fn short_id_keeps_the_tail() {
 fn summary_line_reports_actions() {
     assert_eq!(summary_line("12:34:56", 2, 1), "Last check 12:34:56   nudged 2   held 1");
 }
+
+fn luminance(hex: &str) -> f64 {
+    let channels: Vec<f64> = (1..=5).step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap() as f64 / 255.0)
+        .map(|c| if c <= 0.03928 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) })
+        .collect();
+    0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+}
+
+fn contrast(bg: &str, fg: &str) -> f64 {
+    let (hi, lo) = if luminance(bg) > luminance(fg) {
+        (luminance(bg), luminance(fg))
+    } else {
+        (luminance(fg), luminance(bg))
+    };
+    (hi + 0.05) / (lo + 0.05)
+}
+
+#[test]
+fn badge_and_button_colors_meet_wcag_aa() {
+    // Mirrors the fixed colors in ui.rs CSS; keep in sync when the theme changes.
+    let pairs = [
+        ("due", "#8a5a00", "#ffe6b3"),
+        ("nudged", "#1f5a8a", "#d6ecff"),
+        ("waiting", "#5a3a8a", "#ece0ff"),
+        ("stalled", "#8a2d2d", "#ffdede"),
+        ("idle", "#2d6b3f", "#d8ffe2"),
+        ("suggested", "#2d7d46", "#ffffff"),
+        ("destructive", "#7d2d2d", "#ffffff"),
+    ];
+    for (name, bg, fg) in pairs {
+        let ratio = contrast(bg, fg);
+        assert!(ratio >= 4.5, "{} contrast {:.2}:1 is below AA", name, ratio);
+    }
+}

@@ -84,3 +84,5 @@ R-010: loop detection now catches A->B->A via Session.prev_hash (serde default, 
 R-014 partial: both CLI and GUI state import now call state::backup_state(), producing a timestamped state.bak-<ms> file; CLI prints its path, GUI shows it in the summary. Verified with isolated import; 31 binaries green.
 
 SSE indicator correctness: watch_events clears connected on EOF/read error, not just call() failure. Added mock SSE server test that emits one event, closes cleanly, and asserts both wake and connected=false. Live indicator still reads connected.
+
+Accessibility: measured all badge/button foreground/background pairs at 4.86:1 to 9.19:1, all above WCAG AA 4.5:1. Added ui_tests regression test pinning those ratios against theme drift.
