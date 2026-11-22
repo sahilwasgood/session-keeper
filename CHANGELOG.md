@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Save settings now redraws the session list immediately, so prompt and sort changes appear without waiting for the next tick.
+
+## Unreleased
+
 - Status filter changes now redraw the session list immediately instead of waiting for the next watchdog tick (up to 30 seconds).
 
 ## Unreleased

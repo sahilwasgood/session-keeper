@@ -1977,6 +1977,7 @@ fn main() {
     settings_box.add(&time_row);
 
     let save_settings = icon_button("Save settings", "document-save-symbolic");
+    let cb_saver = refresh_cb.clone();
     save_settings.style_context().add_class("suggested-action");
     let st_settings = state.clone();
     let tx_settings = tx.clone();
@@ -2025,6 +2026,9 @@ fn main() {
         std::env::set_var("SESSION_KEEPER_DRY_RUN", if dry { "1" } else { "0" });
         std::env::set_var("SESSION_KEEPER_NOTIFY", if notify { "1" } else { "0" });
         arm_timer(&st_settings, &tx_settings, &busy_settings, &timer_settings);
+        if let Some(cb) = cb_saver.borrow().as_ref() {
+            cb();
+        }
     });
     settings_box.add(&save_settings);
 
