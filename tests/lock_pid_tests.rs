@@ -90,7 +90,10 @@ fn version_mode_does_not_create_lock() {
         .output()
         .unwrap();
     assert!(out.status.success());
-    assert!(!lock.exists(), "Version mode must not take the single-instance lock");
+    assert!(
+        !lock.exists(),
+        "Version mode must not take the single-instance lock"
+    );
 }
 
 #[test]
@@ -106,7 +109,10 @@ fn status_mode_does_not_create_lock() {
         .output()
         .unwrap();
     assert!(out.status.success());
-    assert!(!lock.exists(), "Status mode must not take the single-instance lock");
+    assert!(
+        !lock.exists(),
+        "Status mode must not take the single-instance lock"
+    );
 }
 
 #[test]

@@ -3,26 +3,42 @@ use gtk::prelude::*;
 use rusqlite::{Connection, OpenFlags};
 use session_keeper_rust::cli::{parse_args, Mode, HELP};
 use session_keeper_rust::config::{load_env_file, set_time_prefs, Config, TimePrefs};
+use session_keeper_rust::db::{
+    classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_exists, session_model,
+    session_title, Status,
+};
 use session_keeper_rust::events::watch_events;
-use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_exists, session_model, session_title, Status};
-use session_keeper_rust::nudge::{append_history, decide, fetch_models_result, fetch_sessions_result, has_pending_human_input, log_line, notify, notify_send_available, nudges_in_last_hour_combined, send_nudge, switch_model, Decision, ModelInfo, SessionInfo};
+use session_keeper_rust::nudge::{
+    append_history, decide, fetch_models_result, fetch_sessions_result, has_pending_human_input,
+    log_line, notify, notify_send_available, nudges_in_last_hour_combined, send_nudge,
+    switch_model, Decision, ModelInfo, SessionInfo,
+};
 use session_keeper_rust::process::create_lock;
-use session_keeper_rust::state::{apply_tick_fields, states_differ, GlobalTickFields, Session, State, TickFields};
 use session_keeper_rust::safety::{fingerprint, is_repeating_output, should_nudge_after_debounce};
-use session_keeper_rust::ui::{format_age, history_for_sid, matches_filter, needs_attention, prompt_display, short_id, sort_key, status_changed, status_class, status_text, summary_line, CSS};
+use session_keeper_rust::state::{
+    apply_tick_fields, states_differ, GlobalTickFields, Session, State, TickFields,
+};
+use session_keeper_rust::ui::{
+    format_age, history_for_sid, matches_filter, needs_attention, prompt_display, short_id,
+    sort_key, status_changed, status_class, status_text, summary_line, CSS,
+};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::Path;
 use std::rc::Rc;
-use std::sync::mpsc::{channel, Sender, TryRecvError};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{channel, Sender, TryRecvError};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-static MODEL_TX: OnceLock<Sender<(String, Result<Vec<ModelInfo>, String>)>> = OnceLock::new();
-static KICK_TX: OnceLock<Sender<(String, i64, Result<(), String>)>> = OnceLock::new();
+type ModelResult = Result<Vec<ModelInfo>, String>;
+type SessionResult = Result<Vec<SessionInfo>, String>;
+type KickResult = Result<(), String>;
+
+static MODEL_TX: OnceLock<Sender<(String, ModelResult)>> = OnceLock::new();
+static KICK_TX: OnceLock<Sender<(String, i64, KickResult)>> = OnceLock::new();
 static ADD_TX: OnceLock<Sender<(String, bool)>> = OnceLock::new();
-static SESSION_TX: OnceLock<Sender<Result<Vec<SessionInfo>, String>>> = OnceLock::new();
+static SESSION_TX: OnceLock<Sender<SessionResult>> = OnceLock::new();
 thread_local! {
     static STATUS_FILTER: RefCell<String> = RefCell::new("all".to_string());
 }
@@ -47,7 +63,10 @@ struct TickOutcome {
 }
 
 fn now_ms() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as i64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 fn open_db() -> Option<Connection> {
@@ -61,14 +80,18 @@ fn open_db() -> Option<Connection> {
             c.busy_timeout(Duration::from_millis(1200)).ok()?;
             // A locked or unreadable DB must be reported as unavailable, not
             // silently read as "no events" for every session.
-            c.query_row("SELECT 1 FROM session_message LIMIT 1", [], |_| Ok(())).ok()?;
+            c.query_row("SELECT 1 FROM session_message LIMIT 1", [], |_| Ok(()))
+                .ok()?;
             Some(c)
         })
 }
 
 fn icon_button(label: &str, icon: &str) -> gtk::Button {
     let b = gtk::Button::with_label(label);
-    b.set_image(Some(&gtk::Image::from_icon_name(Some(icon), gtk::IconSize::Button)));
+    b.set_image(Some(&gtk::Image::from_icon_name(
+        Some(icon),
+        gtk::IconSize::Button,
+    )));
     b.set_always_show_image(true);
     b
 }
@@ -91,14 +114,18 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
         None => {
             let msg = "Watchdog paused: drive or database unavailable".to_string();
             log_line(&msg);
-            return (msg, Vec::new(), GlobalTickFields {
-                // Keep the old heartbeat: a paused watchdog must still trip the
-                // stale detector if the database stays unavailable.
-                last_tick_ms: state.borrow().last_tick_ms,
-                cap_alert_ms: state.borrow().cap_alert_ms,
-                missing_alert_ms: state.borrow().missing_alert_ms,
-                cap_remaining: -1,
-            });
+            return (
+                msg,
+                Vec::new(),
+                GlobalTickFields {
+                    // Keep the old heartbeat: a paused watchdog must still trip the
+                    // stale detector if the database stays unavailable.
+                    last_tick_ms: state.borrow().last_tick_ms,
+                    cap_alert_ms: state.borrow().cap_alert_ms,
+                    missing_alert_ms: state.borrow().missing_alert_ms,
+                    cap_remaining: -1,
+                },
+            );
         }
     };
     let sessions: Vec<Session> = state.borrow().sessions.clone();
@@ -120,57 +147,127 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
         };
 
         if !session_exists(&conn, &s.id) {
-            let last = state.borrow().sessions.iter().find(|x| x.id == s.id)
-                .map(|x| x.missing_alert_ms).unwrap_or(0);
+            let last = state
+                .borrow()
+                .sessions
+                .iter()
+                .find(|x| x.id == s.id)
+                .map(|x| x.missing_alert_ms)
+                .unwrap_or(0);
             let missing_cooldown = state.borrow().missing_alert_cooldown_s * 1000;
             if now - last > missing_cooldown {
-                notify("Session Keeper", &format!("Watched session {} is missing from OpenCode", short_id(&s.id)));
-                if let Some(x) = state.borrow_mut().sessions.iter_mut().find(|x| x.id == s.id) {
+                notify(
+                    "Session Keeper",
+                    &format!(
+                        "Watched session {} is missing from OpenCode",
+                        short_id(&s.id)
+                    ),
+                );
+                if let Some(x) = state
+                    .borrow_mut()
+                    .sessions
+                    .iter_mut()
+                    .find(|x| x.id == s.id)
+                {
                     x.missing_alert_ms = now;
                 }
-                if persist { let _ = state.borrow().save(); }
+                if persist {
+                    let _ = state.borrow().save();
+                }
                 log_line(&format!("{}: alerted missing from opencode", s.id));
             }
         }
 
         let status_name = format!("{:?}", status);
         if status == Status::Waiting {
-            let prev = state.borrow().sessions.iter().find(|x| x.id == s.id)
-                .map(|x| x.last_status.clone()).unwrap_or_default();
-            let last_alert = state.borrow().sessions.iter().find(|x| x.id == s.id)
-                .map(|x| x.question_alert_ms).unwrap_or(0);
+            let prev = state
+                .borrow()
+                .sessions
+                .iter()
+                .find(|x| x.id == s.id)
+                .map(|x| x.last_status.clone())
+                .unwrap_or_default();
+            let last_alert = state
+                .borrow()
+                .sessions
+                .iter()
+                .find(|x| x.id == s.id)
+                .map(|x| x.question_alert_ms)
+                .unwrap_or(0);
             let cooldown = state.borrow().alert_cooldown_s * 1000;
             if status_changed(&prev, &status_name) && now - last_alert > cooldown {
                 let title = session_title(&conn, &s.id);
-                notify("Session Keeper", &format!("{} asked a question", if title.is_empty() { &s.id } else { &title }));
-                if let Some(x) = state.borrow_mut().sessions.iter_mut().find(|x| x.id == s.id) {
+                notify(
+                    "Session Keeper",
+                    &format!(
+                        "{} asked a question",
+                        if title.is_empty() { &s.id } else { &title }
+                    ),
+                );
+                if let Some(x) = state
+                    .borrow_mut()
+                    .sessions
+                    .iter_mut()
+                    .find(|x| x.id == s.id)
+                {
                     x.question_alert_ms = now;
                 }
                 log_line(&format!("{}: alerted waiting on question", s.id));
             }
         }
         if status == Status::Stalled {
-            let prev = state.borrow().sessions.iter().find(|x| x.id == s.id)
-                .map(|x| x.last_status.clone()).unwrap_or_default();
-            let last_alert = state.borrow().sessions.iter().find(|x| x.id == s.id)
-                .map(|x| x.stalled_alert_ms).unwrap_or(0);
+            let prev = state
+                .borrow()
+                .sessions
+                .iter()
+                .find(|x| x.id == s.id)
+                .map(|x| x.last_status.clone())
+                .unwrap_or_default();
+            let last_alert = state
+                .borrow()
+                .sessions
+                .iter()
+                .find(|x| x.id == s.id)
+                .map(|x| x.stalled_alert_ms)
+                .unwrap_or(0);
             let cooldown = state.borrow().alert_cooldown_s * 1000;
             if status_changed(&prev, &status_name) && now - last_alert > cooldown {
                 let title = session_title(&conn, &s.id);
-                notify("Session Keeper", &format!("{} is stalled after a nudge", if title.is_empty() { &s.id } else { &title }));
-                if let Some(x) = state.borrow_mut().sessions.iter_mut().find(|x| x.id == s.id) {
+                notify(
+                    "Session Keeper",
+                    &format!(
+                        "{} is stalled after a nudge",
+                        if title.is_empty() { &s.id } else { &title }
+                    ),
+                );
+                if let Some(x) = state
+                    .borrow_mut()
+                    .sessions
+                    .iter_mut()
+                    .find(|x| x.id == s.id)
+                {
                     x.stalled_alert_ms = now;
                 }
                 log_line(&format!("{}: alerted stalled after nudge", s.id));
             }
         }
-        if let Some(x) = state.borrow_mut().sessions.iter_mut().find(|x| x.id == s.id) {
+        if let Some(x) = state
+            .borrow_mut()
+            .sessions
+            .iter_mut()
+            .find(|x| x.id == s.id)
+        {
             x.last_status = status_name;
         }
 
         if decision != Decision::Nudge {
             if status != Status::Due {
-                if let Some(x) = state.borrow_mut().sessions.iter_mut().find(|x| x.id == s.id) {
+                if let Some(x) = state
+                    .borrow_mut()
+                    .sessions
+                    .iter_mut()
+                    .find(|x| x.id == s.id)
+                {
                     x.idle_streak = 0;
                 }
             }
@@ -208,11 +305,17 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
         }
 
         if global_cap > 0 && used_global >= global_cap {
-            log_line(&format!("{}: hold global cap {}/{}", s.id, used_global, global_cap));
+            log_line(&format!(
+                "{}: hold global cap {}/{}",
+                s.id, used_global, global_cap
+            ));
             let last_alert = state.borrow().cap_alert_ms;
             let cap_cooldown = state.borrow().cap_alert_cooldown_s * 1000;
             if now - last_alert > cap_cooldown {
-                notify("Session Keeper", &format!("Global nudge cap reached ({}/hour)", global_cap));
+                notify(
+                    "Session Keeper",
+                    &format!("Global nudge cap reached ({}/hour)", global_cap),
+                );
                 state.borrow_mut().cap_alert_ms = now;
                 let _ = state.borrow().save();
             }
@@ -232,9 +335,16 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
             continue;
         }
 
-        let raw = s.prompt.clone().unwrap_or_else(|| state.borrow().default_prompt.clone());
+        let raw = s
+            .prompt
+            .clone()
+            .unwrap_or_else(|| state.borrow().default_prompt.clone());
         let prompt = raw.trim().to_string();
-        let prompt = if prompt.is_empty() { "continue".to_string() } else { prompt };
+        let prompt = if prompt.is_empty() {
+            "continue".to_string()
+        } else {
+            prompt
+        };
         match send_nudge(&Config::api_base(), &Config::password(), &s.id, &prompt) {
             Ok(()) => {
                 let ts = last_idle_ts(&conn, &s.id);
@@ -246,7 +356,10 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
                         x.prompted = now;
                         x.last_nudge = now;
                         x.nudges += 1;
-                        x.last_action = format!("nudged {}", session_keeper_rust::config::format_log_time(now / 1000));
+                        x.last_action = format!(
+                            "nudged {}",
+                            session_keeper_rust::config::format_log_time(now / 1000)
+                        );
                         x.idle_streak = 0;
                         x.prev_hash = x.last_hash.take();
                         x.last_hash = Some(fp);
@@ -254,7 +367,10 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
                     st.record_nudge(now);
                 }
                 append_history(&s.id, "nudge", &prompt);
-                notify("Session Keeper", &format!("Nudged {}", if title.is_empty() { &s.id } else { &title }));
+                notify(
+                    "Session Keeper",
+                    &format!("Nudged {}", if title.is_empty() { &s.id } else { &title }),
+                );
                 log_line(&format!("{}: prompted", s.id));
                 nudged += 1;
                 used_global += 1;
@@ -268,7 +384,10 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
                         let title = session_title(&conn, &s.id);
                         notify(
                             "Session Keeper",
-                            &format!("Nudge failed for {}", if title.is_empty() { &s.id } else { &title }),
+                            &format!(
+                                "Nudge failed for {}",
+                                if title.is_empty() { &s.id } else { &title }
+                            ),
                         );
                         x.failure_alert_ms = now;
                         log_line(&format!("{}: alerted nudge failure", s.id));
@@ -280,31 +399,50 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
     }
 
     state.borrow_mut().last_tick_ms = now;
-    if persist { let _ = state.borrow().save(); }
-    let updates = state.borrow().sessions.iter().map(|s| TickFields {
-        id: s.id.clone(),
-        handled: s.handled,
-        prompted: s.prompted,
-        last_nudge: s.last_nudge,
-        nudges: s.nudges,
-        idle_streak: s.idle_streak,
-        last_hash: s.last_hash.clone(),
-        prev_hash: s.prev_hash.clone(),
-        last_action: s.last_action.clone(),
-        last_status: s.last_status.clone(),
-        last_alert_ms: s.last_alert_ms,
-        question_alert_ms: s.question_alert_ms,
-        stalled_alert_ms: s.stalled_alert_ms,
-        missing_alert_ms: s.missing_alert_ms,
-        failure_alert_ms: s.failure_alert_ms,
-    }).collect();
+    if persist {
+        let _ = state.borrow().save();
+    }
+    let updates = state
+        .borrow()
+        .sessions
+        .iter()
+        .map(|s| TickFields {
+            id: s.id.clone(),
+            handled: s.handled,
+            prompted: s.prompted,
+            last_nudge: s.last_nudge,
+            nudges: s.nudges,
+            idle_streak: s.idle_streak,
+            last_hash: s.last_hash.clone(),
+            prev_hash: s.prev_hash.clone(),
+            last_action: s.last_action.clone(),
+            last_status: s.last_status.clone(),
+            last_alert_ms: s.last_alert_ms,
+            question_alert_ms: s.question_alert_ms,
+            stalled_alert_ms: s.stalled_alert_ms,
+            missing_alert_ms: s.missing_alert_ms,
+            failure_alert_ms: s.failure_alert_ms,
+        })
+        .collect();
     let globals = GlobalTickFields {
         last_tick_ms: now,
         cap_alert_ms: state.borrow().cap_alert_ms,
         missing_alert_ms: state.borrow().missing_alert_ms,
-        cap_remaining: if global_cap > 0 { (global_cap - used_global).max(0) } else { -1 },
+        cap_remaining: if global_cap > 0 {
+            (global_cap - used_global).max(0)
+        } else {
+            -1
+        },
     };
-    (summary_line(&session_keeper_rust::config::format_log_time(now / 1000), nudged, held), updates, globals)
+    (
+        summary_line(
+            &session_keeper_rust::config::format_log_time(now / 1000),
+            nudged,
+            held,
+        ),
+        updates,
+        globals,
+    )
 }
 
 fn run_tick(snapshot: State, persist: bool) -> TickOutcome {
@@ -320,7 +458,11 @@ fn run_tick(snapshot: State, persist: bool) -> TickOutcome {
                 title: session_title(&conn, &s.id),
                 progress_ms: last_assistant_ts(&conn, &s.id),
                 idle_ms: last_idle_ts(&conn, &s.id),
-                reason: if session_exists(&conn, &s.id) { reason(&status).to_string() } else { "missing_from_opencode".to_string() },
+                reason: if session_exists(&conn, &s.id) {
+                    reason(&status).to_string()
+                } else {
+                    "missing_from_opencode".to_string()
+                },
                 exists: session_exists(&conn, &s.id),
                 model: session_model(&conn, &s.id),
             };
@@ -330,25 +472,30 @@ fn run_tick(snapshot: State, persist: bool) -> TickOutcome {
         // A database outage must not make cards claim "working". Mark them
         // unknown so the visible state matches the paused watchdog summary.
         for s in st.borrow().sessions.iter() {
-            views.insert(s.id.clone(), SessionView {
-                status: Status::Unknown,
-                title: String::new(),
-                progress_ms: 0,
-                idle_ms: 0,
-                reason: "database_unavailable".to_string(),
-                exists: false,
-                model: String::new(),
-            });
+            views.insert(
+                s.id.clone(),
+                SessionView {
+                    status: Status::Unknown,
+                    title: String::new(),
+                    progress_ms: 0,
+                    idle_ms: 0,
+                    reason: "database_unavailable".to_string(),
+                    exists: false,
+                    model: String::new(),
+                },
+            );
         }
     }
-    TickOutcome { summary, updates, globals, views, error: None }
+    TickOutcome {
+        summary,
+        updates,
+        globals,
+        views,
+        error: None,
+    }
 }
 
-fn launch_tick(
-    state: &Rc<RefCell<State>>,
-    tx: &Sender<TickOutcome>,
-    busy: &Rc<Cell<bool>>,
-) {
+fn launch_tick(state: &Rc<RefCell<State>>, tx: &Sender<TickOutcome>, busy: &Rc<Cell<bool>>) {
     if busy.get() {
         return;
     }
@@ -356,7 +503,8 @@ fn launch_tick(
     let snapshot = state.borrow().clone();
     let tx = tx.clone();
     std::thread::spawn(move || {
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_tick(snapshot, false)));
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_tick(snapshot, false)));
         let outcome = match result {
             Ok(o) => o,
             Err(_) => {
@@ -364,7 +512,12 @@ fn launch_tick(
                 TickOutcome {
                     summary: "Watchdog error: tick failed".to_string(),
                     updates: Vec::new(),
-                    globals: GlobalTickFields { last_tick_ms: now_ms(), cap_alert_ms: 0, missing_alert_ms: 0, cap_remaining: -1 },
+                    globals: GlobalTickFields {
+                        last_tick_ms: now_ms(),
+                        cap_alert_ms: 0,
+                        missing_alert_ms: 0,
+                        cap_remaining: -1,
+                    },
                     views: HashMap::new(),
                     error: Some("tick failed".to_string()),
                 }
@@ -443,10 +596,11 @@ fn refresh(
         )
     });
     for (s, view) in items {
-        let view = view;
         let status = view.map(|v| v.status).unwrap_or(Status::Unknown);
         let title = view.map(|v| v.title.as_str()).unwrap_or("");
-        if !matches_filter(&s.id, title, &filter_text) { continue; }
+        if !matches_filter(&s.id, title, &filter_text) {
+            continue;
+        }
 
         let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
         card.style_context().add_class("card");
@@ -457,9 +611,12 @@ fn refresh(
         badge.style_context().add_class(status_class(&status));
         badge.set_size_request(118, -1);
         if let Some(v) = view {
-            badge.set_tooltip_text(Some(&session_keeper_rust::ui::status_tooltip(&v.status)));
+            badge.set_tooltip_text(Some(session_keeper_rust::ui::status_tooltip(&v.status)));
         }
-        if view.map(|v| !v.exists && v.status != Status::Unknown).unwrap_or(false) {
+        if view
+            .map(|v| !v.exists && v.status != Status::Unknown)
+            .unwrap_or(false)
+        {
             badge.set_label("missing");
             badge.style_context().add_class("badge-stalled");
         }
@@ -484,13 +641,15 @@ fn refresh(
         let filter_c = filter.clone();
         let attention_c = attention.clone();
         let sid = s.id.clone();
-        pause.connect_clicked(clone!(@strong st, @strong list_c, @strong views_c, @strong sid => move |_| {
-            if let Some(x) = st.borrow_mut().sessions.iter_mut().find(|x| x.id == sid) {
-                x.enabled = !x.enabled;
-            }
-            let _ = st.borrow().save();
-            refresh(&st, &list_c, &views_c, &filter_c, &attention_c);
-        }));
+        pause.connect_clicked(
+            clone!(@strong st, @strong list_c, @strong views_c, @strong sid => move |_| {
+                if let Some(x) = st.borrow_mut().sessions.iter_mut().find(|x| x.id == sid) {
+                    x.enabled = !x.enabled;
+                }
+                let _ = st.borrow().save();
+                refresh(&st, &list_c, &views_c, &filter_c, &attention_c);
+            }),
+        );
         top.add(&pause);
         card.add(&top);
 
@@ -511,16 +670,30 @@ fn refresh(
                 }
             },
             nudge_text,
-            if s.last_action.is_empty() { "never" } else { &s.last_action }
+            if s.last_action.is_empty() {
+                "never"
+            } else {
+                &s.last_action
+            }
         )));
-        let receipts = view.map(|v| {
-            format!(
-                "state {} | last progress {} | idle {}",
-                v.reason,
-                if v.progress_ms > 0 { format_age(v.progress_ms, now_ms()) } else { "none".to_string() },
-                if v.idle_ms > 0 { format_age(v.idle_ms, now_ms()) } else { "none".to_string() }
-            )
-        }).unwrap_or_default();
+        let receipts = view
+            .map(|v| {
+                format!(
+                    "state {} | last progress {} | idle {}",
+                    v.reason,
+                    if v.progress_ms > 0 {
+                        format_age(v.progress_ms, now_ms())
+                    } else {
+                        "none".to_string()
+                    },
+                    if v.idle_ms > 0 {
+                        format_age(v.idle_ms, now_ms())
+                    } else {
+                        "none".to_string()
+                    }
+                )
+            })
+            .unwrap_or_default();
         let receipts = match view {
             Some(v) if !v.model.is_empty() => format!("{} | model {}", receipts, v.model),
             _ => receipts,
@@ -593,7 +766,10 @@ fn refresh(
 
         let model_btn = icon_button("Model", "preferences-system-symbolic");
         let sid_model = s.id.clone();
-        let tx_model = MODEL_TX.get().expect("model channel not initialized").clone();
+        let tx_model = MODEL_TX
+            .get()
+            .expect("model channel not initialized")
+            .clone();
         model_btn.connect_clicked(move |_| {
             let sid = sid_model.clone();
             let tx = tx_model.clone();
@@ -616,7 +792,10 @@ fn refresh(
                 Some("Kick now"),
                 None::<&gtk::Window>,
                 gtk::DialogFlags::MODAL,
-                &[("Cancel", gtk::ResponseType::Cancel), ("Kick", gtk::ResponseType::Ok)],
+                &[
+                    ("Cancel", gtk::ResponseType::Cancel),
+                    ("Kick", gtk::ResponseType::Ok),
+                ],
             );
             let label = gtk::Label::new(Some(
                 "Kick bypasses debounce, caps and question guards. Send the nudge now?",
@@ -626,9 +805,16 @@ fn refresh(
             dialog.show_all();
 
             let cool = kick_cooldown.clone();
-            let tx = match KICK_TX.get() { Some(t) => t.clone(), None => return };
+            let tx = match KICK_TX.get() {
+                Some(t) => t.clone(),
+                None => return,
+            };
             let sid = sid_kick.clone();
-            let prompt = if prompt_kick.trim().is_empty() { default_kick.clone() } else { prompt_kick.clone() };
+            let prompt = if prompt_kick.trim().is_empty() {
+                default_kick.clone()
+            } else {
+                prompt_kick.clone()
+            };
             dialog.connect_response(move |dlg, resp| {
                 if resp == gtk::ResponseType::Ok {
                     cool.set_sensitive(false);
@@ -669,21 +855,25 @@ fn refresh(
         let filter_c = filter.clone();
         let attention_c = attention.clone();
         let sid_del = s.id.clone();
-        del.connect_clicked(clone!(@strong st, @strong list_c, @strong views_c, @strong sid_del => move |_| {
-            {
-                let mut st_mut = st.borrow_mut();
-                st_mut.sessions.retain(|x| x.id != sid_del);
-                let _ = st_mut.save();
-            }
-            refresh(&st, &list_c, &views_c, &filter_c, &attention_c);
-        }));
+        del.connect_clicked(
+            clone!(@strong st, @strong list_c, @strong views_c, @strong sid_del => move |_| {
+                {
+                    let mut st_mut = st.borrow_mut();
+                    st_mut.sessions.retain(|x| x.id != sid_del);
+                    let _ = st_mut.save();
+                }
+                refresh(&st, &list_c, &views_c, &filter_c, &attention_c);
+            }),
+        );
         actions.add(&del);
         card.add(&actions);
 
         list.add(&card);
     }
     if sessions.is_empty() {
-        let empty = gtk::Label::new(Some("No watched sessions. Add a session id in the field above."));
+        let empty = gtk::Label::new(Some(
+            "No watched sessions. Add a session id in the field above.",
+        ));
         empty.style_context().add_class("note");
         list.add(&empty);
     }
@@ -703,7 +893,10 @@ fn edit_prompt(
         Some("Edit nudge prompt"),
         None::<&gtk::Window>,
         gtk::DialogFlags::MODAL,
-        &[("Cancel", gtk::ResponseType::Cancel), ("Save", gtk::ResponseType::Ok)],
+        &[
+            ("Cancel", gtk::ResponseType::Cancel),
+            ("Save", gtk::ResponseType::Ok),
+        ],
     );
     let entry = gtk::Entry::new();
     entry.set_text(current.unwrap_or(""));
@@ -781,10 +974,25 @@ impl Drop for LockGuard {
 
 fn preflight() {
     let db = Config::db_path();
-    log_line(&format!("Preflight: database {} {}", db.display(), if db.exists() { "ok" } else { "MISSING" }));
+    log_line(&format!(
+        "Preflight: database {} {}",
+        db.display(),
+        if db.exists() { "ok" } else { "MISSING" }
+    ));
     let svc = Config::services_json();
-    log_line(&format!("Preflight: credentials {} {}", svc.display(), if svc.exists() { "ok" } else { "MISSING" }));
-    log_line(&format!("Preflight: notification transport {}", if notify_send_available() { "ok" } else { "MISSING notify-send" }));
+    log_line(&format!(
+        "Preflight: credentials {} {}",
+        svc.display(),
+        if svc.exists() { "ok" } else { "MISSING" }
+    ));
+    log_line(&format!(
+        "Preflight: notification transport {}",
+        if notify_send_available() {
+            "ok"
+        } else {
+            "MISSING notify-send"
+        }
+    ));
 }
 
 fn main() {
@@ -811,7 +1019,11 @@ fn main() {
     if std::env::var_os("SESSION_KEEPER_NOTIFY").is_none() {
         std::env::set_var(
             "SESSION_KEEPER_NOTIFY",
-            if boot_state.persist_notifications { "1" } else { "0" },
+            if boot_state.persist_notifications {
+                "1"
+            } else {
+                "0"
+            },
         );
     }
     if opts.dry_run {
@@ -837,7 +1049,11 @@ fn main() {
             return;
         }
     }
-    let _lock_guard = if lock_needed { Some(LockGuard(lock_path)) } else { None };
+    let _lock_guard = if lock_needed {
+        Some(LockGuard(lock_path))
+    } else {
+        None
+    };
 
     match opts.mode {
         Mode::Help => {
@@ -848,14 +1064,18 @@ fn main() {
             let st = Rc::new(RefCell::new(State::load()));
             let out = run_tick(st.borrow().clone(), true);
             if opts.json {
-                let views: Vec<serde_json::Value> = out.views.iter().map(|(id, v)| {
-                    serde_json::json!({
-                        "id": id,
-                        "status": status_text(&v.status),
-                        "reason": v.reason,
-                        "exists": v.exists,
+                let views: Vec<serde_json::Value> = out
+                    .views
+                    .iter()
+                    .map(|(id, v)| {
+                        serde_json::json!({
+                            "id": id,
+                            "status": status_text(&v.status),
+                            "reason": v.reason,
+                            "exists": v.exists,
+                        })
                     })
-                }).collect();
+                    .collect();
                 let payload = serde_json::json!({
                     "summary": out.summary,
                     "cap_remaining": out.globals.cap_remaining,
@@ -863,7 +1083,7 @@ fn main() {
                 });
                 print_line(&serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string()));
             } else {
-                print_line(&format!("{}", out.summary));
+                print_line(&out.summary.to_string());
             }
             return;
         }
@@ -911,29 +1131,71 @@ fn main() {
                 return;
             }
             for s in &st.sessions {
-                let status = conn.as_ref().map(|c| classify(c, &s.id, &st)).unwrap_or(Status::Unknown);
-                let model = conn.as_ref().map(|c| session_model(c, &s.id)).unwrap_or_default();
-                let last_age = if s.last_nudge > 0 { format_age(s.last_nudge, now_ms()) } else { "never".to_string() };
-                print_line(&format!("{}  {}  {} ({})  model={}  nudges={}  last nudge {} ago  last={}",
-                    short_id(&s.id), s.id, status_text(&status), reason(&status),
-                    if model.is_empty() { "-" } else { &model }, s.nudges, last_age, s.last_action));
+                let status = conn
+                    .as_ref()
+                    .map(|c| classify(c, &s.id, &st))
+                    .unwrap_or(Status::Unknown);
+                let model = conn
+                    .as_ref()
+                    .map(|c| session_model(c, &s.id))
+                    .unwrap_or_default();
+                let last_age = if s.last_nudge > 0 {
+                    format_age(s.last_nudge, now_ms())
+                } else {
+                    "never".to_string()
+                };
+                print_line(&format!(
+                    "{}  {}  {} ({})  model={}  nudges={}  last nudge {} ago  last={}",
+                    short_id(&s.id),
+                    s.id,
+                    status_text(&status),
+                    reason(&status),
+                    if model.is_empty() { "-" } else { &model },
+                    s.nudges,
+                    last_age,
+                    s.last_action
+                ));
             }
             return;
         }
         Mode::Version => {
-            print_line(&format!("Session Keeper {} (Rust)", env!("CARGO_PKG_VERSION")));
+            print_line(&format!(
+                "Session Keeper {} (Rust)",
+                env!("CARGO_PKG_VERSION")
+            ));
             return;
         }
         Mode::Doctor => {
-            print_line(&format!("Session Keeper {} (Rust)", env!("CARGO_PKG_VERSION")));
+            print_line(&format!(
+                "Session Keeper {} (Rust)",
+                env!("CARGO_PKG_VERSION")
+            ));
             let db = Config::db_path();
-            print_line(&format!("database: {} [{}]", db.display(), if db.exists() { "ok" } else { "MISSING" }));
+            print_line(&format!(
+                "database: {} [{}]",
+                db.display(),
+                if db.exists() { "ok" } else { "MISSING" }
+            ));
             let svc = Config::services_json();
-            print_line(&format!("credentials: {} [{}]", svc.display(), if svc.exists() { "ok" } else { "MISSING" }));
-            print_line(&format!("notifier: {}", if notify_send_available() { "notify-send ok" } else { "MISSING notify-send" }));
+            print_line(&format!(
+                "credentials: {} [{}]",
+                svc.display(),
+                if svc.exists() { "ok" } else { "MISSING" }
+            ));
+            print_line(&format!(
+                "notifier: {}",
+                if notify_send_available() {
+                    "notify-send ok"
+                } else {
+                    "MISSING notify-send"
+                }
+            ));
             print_line(&format!("api: {}", Config::api_base()));
             match fetch_sessions_result(&Config::api_base(), &Config::password()) {
-                Ok(sessions) => print_line(&format!("api status: reachable ({} sessions)", sessions.len())),
+                Ok(sessions) => print_line(&format!(
+                    "api status: reachable ({} sessions)",
+                    sessions.len()
+                )),
                 Err(e) => print_line(&format!("api status: UNREACHABLE ({})", e)),
             }
             return;
@@ -951,9 +1213,11 @@ fn main() {
         }
         Mode::Sessions => {
             match fetch_sessions_result(&Config::api_base(), &Config::password()) {
-                Ok(sessions) => for s in sessions {
-                    print_line(&format!("{}  {}", s.id, s.title));
-                },
+                Ok(sessions) => {
+                    for s in sessions {
+                        print_line(&format!("{}  {}", s.id, s.title));
+                    }
+                }
                 Err(e) => {
                     eprintln!("{}", e);
                     std::process::exit(1);
@@ -964,8 +1228,11 @@ fn main() {
         Mode::SetSetting(key, value) => {
             let mut st = State::load();
             if key == "timezone" || key == "date_style" {
-                if key == "timezone" { st.time_prefs.timezone = value.trim().to_lowercase(); }
-                else { st.time_prefs.date_style = value.trim().to_lowercase(); }
+                if key == "timezone" {
+                    st.time_prefs.timezone = value.trim().to_lowercase();
+                } else {
+                    st.time_prefs.date_style = value.trim().to_lowercase();
+                }
                 set_time_prefs(&st.time_prefs);
                 if let Err(e) = st.save() {
                     eprintln!("Setting save failed: {}", e);
@@ -975,7 +1242,8 @@ fn main() {
                 return;
             }
             let parsed = match key.as_str() {
-                "min_gap" | "cap" | "global_cap" | "interval" | "cooldown" | "missing_cooldown" | "cap_cooldown" => value.parse::<i64>().ok(),
+                "min_gap" | "cap" | "global_cap" | "interval" | "cooldown" | "missing_cooldown"
+                | "cap_cooldown" => value.parse::<i64>().ok(),
                 "away" | "enabled" | "dry_run" | "notify" | "clock_24h" => match value.as_str() {
                     "1" | "true" | "on" => Some(1),
                     "0" | "false" | "off" => Some(0),
@@ -1037,19 +1305,32 @@ fn main() {
                 eprintln!("State import failed: {}", e);
                 std::process::exit(1);
             }
-            print_line(&format!("State imported from {} ({} sessions)", path, imported.sessions.len()));
+            print_line(&format!(
+                "State imported from {} ({} sessions)",
+                path,
+                imported.sessions.len()
+            ));
             return;
         }
         Mode::Watch => {
             let st = State::load();
             let interval = st.tick_interval_s.clamp(5, 300) as u64;
-            print_line(&format!("Watching {} sessions, tick every {}s (Ctrl+C to stop)", st.sessions.len(), interval));
+            print_line(&format!(
+                "Watching {} sessions, tick every {}s (Ctrl+C to stop)",
+                st.sessions.len(),
+                interval
+            ));
             loop {
                 let current = State::load();
                 let out = run_tick(current, true);
-                print_line(&format!("{}", out.summary));
+                print_line(&out.summary.to_string());
                 for (sid, view) in out.views {
-                    print_line(&format!("  {} {} {}", short_id(&sid), status_text(&view.status), view.reason));
+                    print_line(&format!(
+                        "  {} {} {}",
+                        short_id(&sid),
+                        status_text(&view.status),
+                        view.reason
+                    ));
                 }
                 std::thread::sleep(std::time::Duration::from_secs(interval));
             }
@@ -1061,7 +1342,11 @@ fn main() {
                 Some(s) => {
                     s.enabled = enable;
                     let _ = st.save();
-                    print_line(&format!("{} {}", sid, if enable { "resumed" } else { "paused" }));
+                    print_line(&format!(
+                        "{} {}",
+                        sid,
+                        if enable { "resumed" } else { "paused" }
+                    ));
                 }
                 None => {
                     eprintln!("Session {} is not in the watch list", sid);
@@ -1074,7 +1359,11 @@ fn main() {
             let mut st = State::load();
             match st.sessions.iter_mut().find(|s| s.id == sid) {
                 Some(s) => {
-                    s.prompt = if text.trim().is_empty() { None } else { Some(text.trim().to_string()) };
+                    s.prompt = if text.trim().is_empty() {
+                        None
+                    } else {
+                        Some(text.trim().to_string())
+                    };
                     let _ = st.save();
                     print_line(&format!("Prompt set for {}", sid));
                 }
@@ -1104,9 +1393,16 @@ fn main() {
                     std::process::exit(1);
                 }
             };
-            let prompt = session.prompt.clone().unwrap_or_else(|| st.default_prompt.clone());
+            let prompt = session
+                .prompt
+                .clone()
+                .unwrap_or_else(|| st.default_prompt.clone());
             let prompt = prompt.trim();
-            let prompt = if prompt.is_empty() { "continue" } else { prompt };
+            let prompt = if prompt.is_empty() {
+                "continue"
+            } else {
+                prompt
+            };
             if Config::dry_run() {
                 print_line(&format!("Would kick {} with: {}", sid, prompt));
                 return;
@@ -1122,7 +1418,10 @@ fn main() {
                         x.last_nudge = now;
                         x.nudges += 1;
                         x.idle_streak = 0;
-                        x.last_action = format!("kicked {}", session_keeper_rust::config::format_log_time(now / 1000));
+                        x.last_action = format!(
+                            "kicked {}",
+                            session_keeper_rust::config::format_log_time(now / 1000)
+                        );
                     }
                     st.record_nudge(now);
                     let _ = st.save();
@@ -1152,9 +1451,15 @@ fn main() {
             }) {
                 print_line(&format!("{} | {} | {}", m.id, m.provider, m.name));
                 shown += 1;
-                if shown >= 30 { break; }
+                if shown >= 30 {
+                    break;
+                }
             }
-            print_line(&format!("Total available: {} models (showing {})", models.len(), shown));
+            print_line(&format!(
+                "Total available: {} models (showing {})",
+                models.len(),
+                shown
+            ));
             return;
         }
         Mode::SetModel(sid, id, provider) => {
@@ -1162,7 +1467,13 @@ fn main() {
                 eprintln!("Session {} is not in the watch list", sid);
                 std::process::exit(1);
             }
-            match switch_model(&Config::api_base(), &Config::password(), &sid, &id, &provider) {
+            match switch_model(
+                &Config::api_base(),
+                &Config::password(),
+                &sid,
+                &id,
+                &provider,
+            ) {
                 Ok(()) => {
                     log_line(&format!("{}: model switched to {} ({})", sid, id, provider));
                     print_line(&format!("Model switched for {}", sid));
@@ -1179,7 +1490,9 @@ fn main() {
 
     if matches!(opts.mode, Mode::Gui) {
         if std::env::var_os("DISPLAY").is_none() {
-            eprintln!("Session Keeper GUI needs a display. Set DISPLAY or use --watch in a terminal.");
+            eprintln!(
+                "Session Keeper GUI needs a display. Set DISPLAY or use --watch in a terminal."
+            );
             return;
         }
         let notify_ok = std::process::Command::new("sh")
@@ -1225,7 +1538,8 @@ fn main() {
     let (session_tx, session_rx) = channel::<Result<Vec<SessionInfo>, String>>();
     let _ = SESSION_TX.set(session_tx.clone());
     let _ = KICK_TX.set(kick_tx.clone());
-    let model_cache: Rc<RefCell<HashMap<String, Vec<ModelInfo>>>> = Rc::new(RefCell::new(HashMap::new()));
+    let model_cache: Rc<RefCell<HashMap<String, Vec<ModelInfo>>>> =
+        Rc::new(RefCell::new(HashMap::new()));
 
     let filter_entry = gtk::Entry::new();
     let window = gtk::Window::new(gtk::WindowType::Toplevel);
@@ -1294,7 +1608,9 @@ fn main() {
     summary.set_xalign(0.0);
     outer.add(&summary);
 
-    let note = gtk::Label::new(Some("Watchdog runs only while this window is open. Closing it stops everything."));
+    let note = gtk::Label::new(Some(
+        "Watchdog runs only while this window is open. Closing it stops everything.",
+    ));
     note.style_context().add_class("note");
     note.set_xalign(0.0);
     outer.add(&note);
@@ -1331,14 +1647,21 @@ fn main() {
     status_combo.set_active_id(Some("all"));
     STATUS_FILTER.with(|f| *f.borrow_mut() = "all".to_string());
     status_combo.connect_changed(move |combo| {
-        let value = combo.active_id().map(|s| s.to_string()).unwrap_or_else(|| "all".to_string());
+        let value = combo
+            .active_id()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "all".to_string());
         STATUS_FILTER.with(|f| *f.borrow_mut() = value);
         // The periodic tick outcome calls refresh, so the new filter applies
         // within one tick without reaching widgets declared further down.
     });
     controls.add(&status_combo);
 
-    let pause_toggle = gtk::ToggleButton::with_label(if state.borrow().enabled { "Pause all" } else { "Resume all" });
+    let pause_toggle = gtk::ToggleButton::with_label(if state.borrow().enabled {
+        "Pause all"
+    } else {
+        "Resume all"
+    });
     pause_toggle.style_context().add_class("destructive-action");
     let st_pause = state.clone();
     let summary_pause = summary.clone();
@@ -1347,7 +1670,11 @@ fn main() {
         st_pause.borrow_mut().enabled = enabled;
         let _ = st_pause.borrow().save();
         b.set_label(if enabled { "Pause all" } else { "Resume all" });
-        summary_pause.set_label(if enabled { "Watching enabled" } else { "All automatic nudges paused" });
+        summary_pause.set_label(if enabled {
+            "Watching enabled"
+        } else {
+            "All automatic nudges paused"
+        });
     });
     controls.add(&pause_toggle);
 
@@ -1381,7 +1708,10 @@ fn main() {
 
     let discover = icon_button("Discover", "system-search-symbolic");
     discover.connect_clicked(|_| {
-        let tx = match SESSION_TX.get() { Some(t) => t.clone(), None => return };
+        let tx = match SESSION_TX.get() {
+            Some(t) => t.clone(),
+            None => return,
+        };
         let api = Config::api_base();
         let pw = Config::password();
         std::thread::spawn(move || {
@@ -1419,7 +1749,13 @@ fn main() {
     let filter_att = filter.clone();
     attention_cb.connect_toggled(move |b| {
         *attention_toggle.borrow_mut() = b.is_active();
-        refresh(&st_att, &list_att, &views_att, &filter_att, &attention_toggle);
+        refresh(
+            &st_att,
+            &list_att,
+            &views_att,
+            &filter_att,
+            &attention_toggle,
+        );
     });
 
     let filter_state = filter.clone();
@@ -1429,7 +1765,13 @@ fn main() {
     let st_filter = state.clone();
     filter_entry.connect_changed(move |e| {
         *filter_state.borrow_mut() = e.text().to_string();
-        refresh(&st_filter, &list_filter, &views_filter, &filter_state, &attention_filter);
+        refresh(
+            &st_filter,
+            &list_filter,
+            &views_filter,
+            &filter_state,
+            &attention_filter,
+        );
     });
 
     // Settings panel from the old web dashboard.
@@ -1440,11 +1782,34 @@ fn main() {
     let def_prompt = gtk::Entry::new();
     def_prompt.set_text(&state.borrow().default_prompt);
     def_prompt.set_placeholder_text(Some("Default nudge prompt"));
-    let min_gap = gtk::SpinButton::new(Some(&gtk::Adjustment::new(state.borrow().min_gap as f64, 0.0, 3600.0, 1.0, 10.0, 0.0)), 1.0, 0);
+    let min_gap = gtk::SpinButton::new(
+        Some(&gtk::Adjustment::new(
+            state.borrow().min_gap as f64,
+            0.0,
+            3600.0,
+            1.0,
+            10.0,
+            0.0,
+        )),
+        1.0,
+        0,
+    );
     min_gap.set_value(state.borrow().min_gap as f64);
-    let cap = gtk::SpinButton::new(Some(&gtk::Adjustment::new(state.borrow().max_nudges_per_hour as f64, 0.0, 500.0, 1.0, 10.0, 0.0)), 1.0, 0);
+    let cap = gtk::SpinButton::new(
+        Some(&gtk::Adjustment::new(
+            state.borrow().max_nudges_per_hour as f64,
+            0.0,
+            500.0,
+            1.0,
+            10.0,
+            0.0,
+        )),
+        1.0,
+        0,
+    );
     cap.set_value(state.borrow().max_nudges_per_hour as f64);
-    let away = gtk::CheckButton::with_label("Away mode (never nudge a session that asked a question)");
+    let away =
+        gtk::CheckButton::with_label("Away mode (never nudge a session that asked a question)");
     away.set_active(state.borrow().away_mode);
 
     let row1 = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -1465,22 +1830,46 @@ fn main() {
     settings_box.add(&sort_cb);
 
     let global_cap = gtk::SpinButton::new(
-        Some(&gtk::Adjustment::new(state.borrow().global_nudge_cap as f64, 0.0, 500.0, 1.0, 10.0, 0.0)),
-        1.0, 0,
+        Some(&gtk::Adjustment::new(
+            state.borrow().global_nudge_cap as f64,
+            0.0,
+            500.0,
+            1.0,
+            10.0,
+            0.0,
+        )),
+        1.0,
+        0,
     );
     let row3 = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     row3.add(&gtk::Label::new(Some("Global nudge cap/hour:")));
     row3.add(&global_cap);
     row3.add(&gtk::Label::new(Some("Tick interval (s):")));
     let interval_spin = gtk::SpinButton::new(
-        Some(&gtk::Adjustment::new(state.borrow().tick_interval_s as f64, 5.0, 300.0, 5.0, 30.0, 0.0)),
-        1.0, 0,
+        Some(&gtk::Adjustment::new(
+            state.borrow().tick_interval_s as f64,
+            5.0,
+            300.0,
+            5.0,
+            30.0,
+            0.0,
+        )),
+        1.0,
+        0,
     );
     row3.add(&interval_spin);
     row3.add(&gtk::Label::new(Some("Alert cooldown (s):")));
     let cooldown_spin = gtk::SpinButton::new(
-        Some(&gtk::Adjustment::new(state.borrow().alert_cooldown_s as f64, 30.0, 3600.0, 30.0, 300.0, 0.0)),
-        1.0, 0,
+        Some(&gtk::Adjustment::new(
+            state.borrow().alert_cooldown_s as f64,
+            30.0,
+            3600.0,
+            30.0,
+            300.0,
+            0.0,
+        )),
+        1.0,
+        0,
     );
     row3.add(&cooldown_spin);
     settings_box.add(&row3);
@@ -1488,14 +1877,30 @@ fn main() {
     let row_cooldowns = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     row_cooldowns.add(&gtk::Label::new(Some("Missing-session cooldown (s):")));
     let missing_cooldown_spin = gtk::SpinButton::new(
-        Some(&gtk::Adjustment::new(state.borrow().missing_alert_cooldown_s as f64, 0.0, 86400.0, 60.0, 3600.0, 0.0)),
-        1.0, 0,
+        Some(&gtk::Adjustment::new(
+            state.borrow().missing_alert_cooldown_s as f64,
+            0.0,
+            86400.0,
+            60.0,
+            3600.0,
+            0.0,
+        )),
+        1.0,
+        0,
     );
     row_cooldowns.add(&missing_cooldown_spin);
     row_cooldowns.add(&gtk::Label::new(Some("Cap-alert cooldown (s):")));
     let cap_cooldown_spin = gtk::SpinButton::new(
-        Some(&gtk::Adjustment::new(state.borrow().cap_alert_cooldown_s as f64, 0.0, 86400.0, 60.0, 3600.0, 0.0)),
-        1.0, 0,
+        Some(&gtk::Adjustment::new(
+            state.borrow().cap_alert_cooldown_s as f64,
+            0.0,
+            86400.0,
+            60.0,
+            3600.0,
+            0.0,
+        )),
+        1.0,
+        0,
     );
     row_cooldowns.add(&cap_cooldown_spin);
     settings_box.add(&row_cooldowns);
@@ -1569,7 +1974,11 @@ fn main() {
     let date_style_settings = date_style.clone();
     save_settings.connect_clicked(move |_| {
         let p = def_prompt.text().trim().to_string();
-        let default_prompt = if p.is_empty() { "continue, dont stop".to_string() } else { p };
+        let default_prompt = if p.is_empty() {
+            "continue, dont stop".to_string()
+        } else {
+            p
+        };
         let dry = dry_cb.is_active();
         let notify = notify_cb.is_active();
         {
@@ -1590,8 +1999,10 @@ fn main() {
             st.time_prefs = TimePrefs {
                 timezone: tz_settings.text().trim().to_lowercase(),
                 clock_24h: clock24_settings.is_active(),
-                date_style: date_style_settings.active_id()
-                    .map(|s| s.to_string()).unwrap_or_else(|| "auto".to_string()),
+                date_style: date_style_settings
+                    .active_id()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "auto".to_string()),
             };
             set_time_prefs(&st.time_prefs);
             let _ = st.save();
@@ -1610,9 +2021,17 @@ fn main() {
     let filter_pause = filter.clone();
     let attention_pause = attention.clone();
     pause_all.connect_clicked(move |_| {
-        for s in st_pause.borrow_mut().sessions.iter_mut() { s.enabled = false; }
+        for s in st_pause.borrow_mut().sessions.iter_mut() {
+            s.enabled = false;
+        }
         let _ = st_pause.borrow().save();
-        refresh(&st_pause, &list_pause, &views_pause, &filter_pause, &attention_pause);
+        refresh(
+            &st_pause,
+            &list_pause,
+            &views_pause,
+            &filter_pause,
+            &attention_pause,
+        );
     });
     bulk_row.add(&pause_all);
     let resume_all = icon_button("Resume all", "media-playback-start-symbolic");
@@ -1622,9 +2041,17 @@ fn main() {
     let filter_resume = filter.clone();
     let attention_resume = attention.clone();
     resume_all.connect_clicked(move |_| {
-        for s in st_resume.borrow_mut().sessions.iter_mut() { s.enabled = true; }
+        for s in st_resume.borrow_mut().sessions.iter_mut() {
+            s.enabled = true;
+        }
         let _ = st_resume.borrow().save();
-        refresh(&st_resume, &list_resume, &views_resume, &filter_resume, &attention_resume);
+        refresh(
+            &st_resume,
+            &list_resume,
+            &views_resume,
+            &filter_resume,
+            &attention_resume,
+        );
     });
     bulk_row.add(&resume_all);
     settings_box.add(&bulk_row);
@@ -1661,9 +2088,20 @@ fn main() {
                 let backup = session_keeper_rust::state::backup_state();
                 *st_import.borrow_mut() = new_state;
                 let _ = st_import.borrow().save();
-                summary_import.set_label(&format!("Imported from {}{}", path.display(),
-                    backup.map(|b| format!(" (backup: {})", b.display())).unwrap_or_default()));
-                refresh(&st_import, &list_import, &views_import, &filter_import, &attention_import);
+                summary_import.set_label(&format!(
+                    "Imported from {}{}",
+                    path.display(),
+                    backup
+                        .map(|b| format!(" (backup: {})", b.display()))
+                        .unwrap_or_default()
+                ));
+                refresh(
+                    &st_import,
+                    &list_import,
+                    &views_import,
+                    &filter_import,
+                    &attention_import,
+                );
             }
             None => summary_import.set_label("Import failed: no valid export file"),
         }
@@ -1678,12 +2116,19 @@ fn main() {
     let summary_reload = summary.clone();
     reload_btn.connect_clicked(move |_| {
         *st_reload.borrow_mut() = State::load();
-        refresh(&st_reload, &list_reload, &views_reload, &filter_reload, &attention_reload);
+        refresh(
+            &st_reload,
+            &list_reload,
+            &views_reload,
+            &filter_reload,
+            &attention_reload,
+        );
         summary_reload.set_label("Settings reloaded from disk");
     });
     io_row.add(&reload_btn);
     settings_box.add(&io_row);
-    let settings_scroll = gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
+    let settings_scroll =
+        gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
     settings_scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
     settings_scroll.set_max_content_height(260);
     settings_scroll.set_propagate_natural_height(true);
@@ -1767,7 +2212,8 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
                     if let Some(err) = outcome.error {
                         // A worker panic must not leave Check now disabled forever.
                         // Keep the last good views and state; just surface the error.
-                        summary_ui.set_label(&format!("Watchdog error: {} (Check now to retry)", err));
+                        summary_ui
+                            .set_label(&format!("Watchdog error: {} (Check now to retry)", err));
                         busy_ui.set(false);
                     } else {
                         {
@@ -1778,21 +2224,32 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
                             let mut merged = State::load();
                             apply_tick_fields(&mut merged, &outcome.updates, outcome.globals);
                             let _ = merged.save();
-                            pause_ui.set_label(if merged.enabled { "Pause all" } else { "Resume all" });
+                            pause_ui.set_label(if merged.enabled {
+                                "Pause all"
+                            } else {
+                                "Resume all"
+                            });
                             *st_ui.borrow_mut() = merged;
                         }
                         *views_ui.borrow_mut() = outcome.views;
                         let watched = st_ui.borrow().sessions.len();
-                        let attention = views_ui.borrow().values().filter(|v| needs_attention(&v.status)).count();
+                        let attention = views_ui
+                            .borrow()
+                            .values()
+                            .filter(|v| needs_attention(&v.status))
+                            .count();
                         let prefix = if Config::dry_run() { "DRY RUN | " } else { "" };
                         let cap_text = if outcome.globals.cap_remaining < 0 {
                             String::new()
                         } else {
                             format!("  |  global cap {} left", outcome.globals.cap_remaining)
                         };
-                        summary_ui.set_label(&format!("{}{}  |  {} watched, {} need attention{}",
-                            prefix, outcome.summary, watched, attention, cap_text));
-                        title_ui.set_title(&format!("Session Keeper - {} need attention", attention));
+                        summary_ui.set_label(&format!(
+                            "{}{}  |  {} watched, {} need attention{}",
+                            prefix, outcome.summary, watched, attention, cap_text
+                        ));
+                        title_ui
+                            .set_title(&format!("Session Keeper - {} need attention", attention));
                         history_ui.set_label(&tail_file(&Config::history_path(), 25));
                         log_ui.set_label(&tail_file(&Config::log_path(), 25));
                         digest_ui.set_label(&today_digest());
@@ -1826,27 +2283,44 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
                         return glib::ControlFlow::Continue;
                     }
                 };
-                models_state.borrow_mut().insert(sid.clone(), models.clone());
+                models_state
+                    .borrow_mut()
+                    .insert(sid.clone(), models.clone());
                 let dialog = gtk::Dialog::with_buttons(
                     Some("Switch model"),
                     None::<&gtk::Window>,
                     gtk::DialogFlags::MODAL,
-                    &[("Cancel", gtk::ResponseType::Cancel), ("Switch", gtk::ResponseType::Ok)],
+                    &[
+                        ("Cancel", gtk::ResponseType::Cancel),
+                        ("Switch", gtk::ResponseType::Ok),
+                    ],
                 );
                 let combo = gtk::ComboBoxText::new();
                 for m in &models {
                     let key = format!("{}|{}", m.id, m.provider);
-                    let label = if m.name.is_empty() { m.id.clone() } else { m.name.clone() };
+                    let label = if m.name.is_empty() {
+                        m.id.clone()
+                    } else {
+                        m.name.clone()
+                    };
                     combo.append(Some(&key), &format!("{} ({})", label, m.provider));
                 }
                 if !models.is_empty() {
-                    let current = views_model.borrow().get(&sid).map(|v| v.model.clone()).unwrap_or_default();
-                    let active = models.iter().find(|m| !current.is_empty() && m.id == current)
+                    let current = views_model
+                        .borrow()
+                        .get(&sid)
+                        .map(|v| v.model.clone())
+                        .unwrap_or_default();
+                    let active = models
+                        .iter()
+                        .find(|m| !current.is_empty() && m.id == current)
                         .map(|m| format!("{}|{}", m.id, m.provider))
                         .or_else(|| Some(format!("{}|{}", models[0].id, models[0].provider)));
                     combo.set_active_id(active.as_deref());
                 } else {
-                    dialog.content_area().add(&gtk::Label::new(Some("No models returned by OpenCode.")));
+                    dialog
+                        .content_area()
+                        .add(&gtk::Label::new(Some("No models returned by OpenCode.")));
                 }
                 dialog.content_area().add(&combo);
                 dialog.show_all();
@@ -1884,7 +2358,9 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
         if let Some(r) = switch_rx_cell.borrow_mut().as_mut() {
             if let Ok((sid, result)) = r.try_recv() {
                 match result {
-                    Ok(()) => summary_switch.set_label(&format!("Model switched for {}", short_id(&sid))),
+                    Ok(()) => {
+                        summary_switch.set_label(&format!("Model switched for {}", short_id(&sid)))
+                    }
                     Err(e) => summary_switch.set_label(&format!("Model switch failed: {}", e)),
                 }
             }
@@ -1917,8 +2393,17 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
                         ..Default::default()
                     });
                     let _ = st_add_result.borrow().save();
-                    summary_add_result.set_label(&format!("Added {}", session_keeper_rust::ui::short_id(&sid)));
-                    refresh(&st_add_result, &list_add_result, &views_add_result, &filter_add_result, &attention_add_result);
+                    summary_add_result.set_label(&format!(
+                        "Added {}",
+                        session_keeper_rust::ui::short_id(&sid)
+                    ));
+                    refresh(
+                        &st_add_result,
+                        &list_add_result,
+                        &views_add_result,
+                        &filter_add_result,
+                        &attention_add_result,
+                    );
                 }
             }
         }
@@ -1949,11 +2434,18 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
                         Some("Add a session"),
                         None::<&gtk::Window>,
                         gtk::DialogFlags::MODAL,
-                        &[("Cancel", gtk::ResponseType::Cancel), ("Add", gtk::ResponseType::Ok)],
+                        &[
+                            ("Cancel", gtk::ResponseType::Cancel),
+                            ("Add", gtk::ResponseType::Ok),
+                        ],
                     );
                     let combo = gtk::ComboBoxText::new();
                     for s in &found {
-                        let label = if s.title.is_empty() { s.id.clone() } else { format!("{} - {}", s.title, s.id) };
+                        let label = if s.title.is_empty() {
+                            s.id.clone()
+                        } else {
+                            format!("{} - {}", s.title, s.id)
+                        };
                         combo.append(Some(&s.id), &label);
                     }
                     combo.set_active(Some(0));
@@ -1984,7 +2476,10 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
                                         ..Default::default()
                                     });
                                     let _ = st.borrow().save();
-                                    summary.set_label(&format!("Added {}", session_keeper_rust::ui::short_id(&sid)));
+                                    summary.set_label(&format!(
+                                        "Added {}",
+                                        session_keeper_rust::ui::short_id(&sid)
+                                    ));
                                     refresh(&st, &list, &views, &filter, &attention);
                                 }
                             }
@@ -2004,7 +2499,9 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
         if let Some(r) = kick_rx_cell.borrow_mut().as_mut() {
             if let Ok((sid, ts, result)) = r.try_recv() {
                 match result {
-                    Ok(()) if Config::dry_run() => summary_kick.set_label(&format!("Dry-run kick for {}", short_id(&sid))),
+                    Ok(()) if Config::dry_run() => {
+                        summary_kick.set_label(&format!("Dry-run kick for {}", short_id(&sid)))
+                    }
                     Ok(()) => {
                         let mut st = st_kick_result.borrow_mut();
                         let now = now_ms();
@@ -2014,7 +2511,10 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
                             x.last_nudge = now;
                             x.nudges += 1;
                             x.idle_streak = 0;
-                            x.last_action = format!("kicked {}", session_keeper_rust::config::format_log_time(now / 1000));
+                            x.last_action = format!(
+                                "kicked {}",
+                                session_keeper_rust::config::format_log_time(now / 1000)
+                            );
                         }
                         st.record_nudge(now);
                         let _ = st.save();
@@ -2049,7 +2549,11 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
             if old_interval != disk.tick_interval_s {
                 arm_timer(&st_watch, &tx_watch, &busy_watch, &timer_watch);
             }
-            pause_watch.set_label(if disk.enabled { "Pause all" } else { "Resume all" });
+            pause_watch.set_label(if disk.enabled {
+                "Pause all"
+            } else {
+                "Resume all"
+            });
             set_time_prefs(&disk.time_prefs);
             // A settings change made by CLI or another process must reach the
             // watchdog workers, not just the GUI's in-memory state.
@@ -2061,7 +2565,13 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
                 "SESSION_KEEPER_NOTIFY",
                 if disk.persist_notifications { "1" } else { "0" },
             );
-            refresh(&st_watch, &list_watch, &views_watch, &filter_watch, &attention_watch);
+            refresh(
+                &st_watch,
+                &list_watch,
+                &views_watch,
+                &filter_watch,
+                &attention_watch,
+            );
             summary_watch.set_label("State reloaded from disk");
             log_line("state reloaded from disk (external edit)");
         }
@@ -2074,7 +2584,10 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
     glib::timeout_add_seconds_local(10, move || {
         let last = st_beat.borrow().last_tick_ms;
         if last > 0 && now_ms() - last > 120_000 {
-            beat_summary.set_label(&format!("WATCHDOG STALE - last tick {}", format_age(last, now_ms())));
+            beat_summary.set_label(&format!(
+                "WATCHDOG STALE - last tick {}",
+                format_age(last, now_ms())
+            ));
             let mut notified = beat_notified.borrow_mut();
             if now_ms() - *notified > 300_000 {
                 notify("Session Keeper", "Watchdog has not ticked for 2 minutes");
@@ -2102,7 +2615,13 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
     let event_stop_thread = event_stop.clone();
     let event_state = event_connected.clone();
     std::thread::spawn(move || {
-        watch_events(&event_api, &event_pw, wake_tx, event_stop_thread, event_state);
+        watch_events(
+            &event_api,
+            &event_pw,
+            wake_tx,
+            event_stop_thread,
+            event_state,
+        );
     });
 
     let event_label_timer = event_label.clone();
@@ -2142,16 +2661,25 @@ mod tests {
     fn run_tick_reports_unknown_views_when_database_is_unavailable() {
         let dir = isolated("db-down");
         let mut st = State::default();
-        st.sessions.push(Session { id: "ses_runtick_a".to_string(), ..Default::default() });
+        st.sessions.push(Session {
+            id: "ses_runtick_a".to_string(),
+            ..Default::default()
+        });
         let out = run_tick(st, false);
         assert!(out.error.is_none());
         assert!(out.summary.contains("Watchdog paused"));
-        let view = out.views.get("ses_runtick_a").expect("view for watched session");
+        let view = out
+            .views
+            .get("ses_runtick_a")
+            .expect("view for watched session");
         assert_eq!(view.status, Status::Unknown);
         assert_eq!(view.reason, "database_unavailable");
         assert_eq!(view.progress_ms, 0);
         assert_eq!(out.globals.cap_remaining, -1);
-        assert_eq!(out.globals.last_tick_ms, 0, "paused tick must not advance the heartbeat");
+        assert_eq!(
+            out.globals.last_tick_ms, 0,
+            "paused tick must not advance the heartbeat"
+        );
         std::fs::remove_dir_all(dir).ok();
     }
 

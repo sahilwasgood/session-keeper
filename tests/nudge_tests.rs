@@ -11,7 +11,16 @@ fn sess() -> Session {
         prompted: 0,
         last_nudge: 0,
         nudges: 0,
-        last_action: String::new(), idle_streak: 0, last_hash: None, prev_hash: None, last_status: String::new(), last_alert_ms: 0, question_alert_ms: 0, stalled_alert_ms: 0, missing_alert_ms: 0, failure_alert_ms: 0,
+        last_action: String::new(),
+        idle_streak: 0,
+        last_hash: None,
+        prev_hash: None,
+        last_status: String::new(),
+        last_alert_ms: 0,
+        question_alert_ms: 0,
+        stalled_alert_ms: 0,
+        missing_alert_ms: 0,
+        failure_alert_ms: 0,
     }
 }
 
@@ -36,13 +45,19 @@ fn hourly_cap_holds_nudge() {
 fn away_mode_question_is_held() {
     let mut st = State::default();
     st.away_mode = true;
-    assert_eq!(decide(&st, &sess(), &Status::Waiting, 100_000), Decision::Hold);
+    assert_eq!(
+        decide(&st, &sess(), &Status::Waiting, 100_000),
+        Decision::Hold
+    );
 }
 
 #[test]
 fn stalled_no_new_output_is_held() {
     let st = State::default();
-    assert_eq!(decide(&st, &sess(), &Status::Stalled, 100_000), Decision::Hold);
+    assert_eq!(
+        decide(&st, &sess(), &Status::Stalled, 100_000),
+        Decision::Hold
+    );
 }
 
 #[test]
@@ -76,5 +91,9 @@ fn combined_global_count_survives_missing_history() {
     st.recent_nudges.push(now - 2000);
     st.recent_nudges.push(now - 4_000_000);
     let count = session_keeper_rust::nudge::nudges_in_last_hour_combined(now, &st);
-    assert!(count >= 2, "in-state nudges must count when history is gone: {}", count);
+    assert!(
+        count >= 2,
+        "in-state nudges must count when history is gone: {}",
+        count
+    );
 }

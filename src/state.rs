@@ -27,14 +27,30 @@ pub fn backup_state() -> Option<std::path::PathBuf> {
     std::fs::copy(&path, &backup).ok().map(|_| backup)
 }
 
-fn default_enabled() -> bool { true }
-fn default_prompt() -> String { "continue, dont stop".to_string() }
-fn default_min_gap() -> i64 { 10 }
-fn default_max_nudges() -> i64 { 30 }
-fn default_global_cap() -> i64 { 60 }
-fn default_interval() -> i64 { 30 }
-fn default_true() -> bool { true }
-fn default_cooldown() -> i64 { 300 }
+fn default_enabled() -> bool {
+    true
+}
+fn default_prompt() -> String {
+    "continue, dont stop".to_string()
+}
+fn default_min_gap() -> i64 {
+    10
+}
+fn default_max_nudges() -> i64 {
+    30
+}
+fn default_global_cap() -> i64 {
+    60
+}
+fn default_interval() -> i64 {
+    30
+}
+fn default_true() -> bool {
+    true
+}
+fn default_cooldown() -> i64 {
+    300
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
@@ -141,7 +157,9 @@ pub struct State {
     pub time_prefs: TimePrefs,
 }
 
-fn default_slow_cooldown() -> i64 { 3600 }
+fn default_slow_cooldown() -> i64 {
+    3600
+}
 
 impl Default for State {
     fn default() -> Self {
@@ -170,14 +188,20 @@ impl Default for State {
 }
 
 impl State {
-    pub fn load() -> State { Self::load_from_path(&Config::state_path()) }
+    pub fn load() -> State {
+        Self::load_from_path(&Config::state_path())
+    }
 
     pub fn load_from_path(path: &Path) -> State {
         let text = match std::fs::read_to_string(path) {
             Ok(t) => t,
             Err(e) => {
                 if e.kind() != io::ErrorKind::NotFound {
-                    eprintln!("session-keeper: cannot read state {}: {}", path.display(), e);
+                    eprintln!(
+                        "session-keeper: cannot read state {}: {}",
+                        path.display(),
+                        e
+                    );
                 }
                 return State::default();
             }
@@ -192,7 +216,8 @@ impl State {
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_nanos())
                         .unwrap_or(0);
-                    let backup = std::path::PathBuf::from(format!("{}.corrupt-{}", path.display(), stamp));
+                    let backup =
+                        std::path::PathBuf::from(format!("{}.corrupt-{}", path.display(), stamp));
                     let _ = std::fs::copy(path, backup);
                 }
                 State::default()
@@ -207,7 +232,8 @@ impl State {
 
     fn normalize(mut s: State) -> State {
         let mut seen = std::collections::HashSet::new();
-        s.sessions.retain(|x| is_valid_session_id(&x.id) && seen.insert(x.id.clone()));
+        s.sessions
+            .retain(|x| is_valid_session_id(&x.id) && seen.insert(x.id.clone()));
         s.min_gap = s.min_gap.clamp(0, 3600);
         s.max_nudges_per_hour = s.max_nudges_per_hour.max(0);
         s.global_nudge_cap = s.global_nudge_cap.max(0);
@@ -243,7 +269,10 @@ impl State {
             // Callers ignore the Result; surface the first failure once so a
             // read-only or full disk cannot silently lose settings and the watch list.
             if SAVE_FAILED.set(()).is_ok() {
-                crate::nudge::log_line(&format!("State save failed: {} (later failures this process are not logged)", e));
+                crate::nudge::log_line(&format!(
+                    "State save failed: {} (later failures this process are not logged)",
+                    e
+                ));
             }
             e
         })
@@ -329,6 +358,12 @@ pub fn apply_tick_fields(state: &mut State, updates: &[TickFields], globals: Glo
 }
 
 pub fn is_valid_session_id(id: &str) -> bool {
-    let rest = match id.strip_prefix("ses_") { Some(r) => r, None => return false };
-    !rest.is_empty() && rest.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    let rest = match id.strip_prefix("ses_") {
+        Some(r) => r,
+        None => return false,
+    };
+    !rest.is_empty()
+        && rest
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }

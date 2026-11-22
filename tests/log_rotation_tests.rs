@@ -2,7 +2,10 @@ use session_keeper_rust::config::{format_log_time, format_utc_time};
 use session_keeper_rust::nudge::rotate_text;
 
 fn lines(n: usize) -> String {
-    (0..n).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n")
+    (0..n)
+        .map(|i| format!("line {}", i))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[test]
@@ -96,7 +99,9 @@ fn log_time_hours_minutes_seconds() {
 fn local_hms(epoch: i64) -> String {
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     let mut secs = epoch as libc::time_t;
-    unsafe { libc::localtime_r(&mut secs, &mut tm); }
+    unsafe {
+        libc::localtime_r(&secs, &mut tm);
+    }
     format!("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec)
 }
 
@@ -116,5 +121,8 @@ fn log_time_uses_machine_local_timezone() {
 #[test]
 fn rotate_text_handles_keep_larger_than_lines() {
     let text = "a\nb\nc";
-    assert_eq!(session_keeper_rust::nudge::rotate_text(text, 2, 100), "a\nb\nc\n");
+    assert_eq!(
+        session_keeper_rust::nudge::rotate_text(text, 2, 100),
+        "a\nb\nc\n"
+    );
 }

@@ -10,18 +10,25 @@ fn tf(id: &str) -> TickFields {
         last_nudge: 0,
         nudges: 0,
         idle_streak: 0,
-        last_hash: None, prev_hash: None,
+        last_hash: None,
+        prev_hash: None,
         last_action: String::new(),
         last_status: String::new(),
         last_alert_ms: 0,
         question_alert_ms: 0,
         stalled_alert_ms: 0,
-        missing_alert_ms: 0, failure_alert_ms: 0,
+        missing_alert_ms: 0,
+        failure_alert_ms: 0,
     }
 }
 
 fn globals(last_tick_ms: i64) -> GlobalTickFields {
-    GlobalTickFields { last_tick_ms, cap_alert_ms: 0, missing_alert_ms: 0, cap_remaining: -1 }
+    GlobalTickFields {
+        last_tick_ms,
+        cap_alert_ms: 0,
+        missing_alert_ms: 0,
+        cap_remaining: -1,
+    }
 }
 
 fn path(tag: &str) -> std::path::PathBuf {
@@ -34,7 +41,12 @@ fn empty_updates_still_apply_globals() {
     apply_tick_fields(
         &mut st,
         &[],
-        GlobalTickFields { last_tick_ms: 999, cap_alert_ms: 11, missing_alert_ms: 22, cap_remaining: 7 },
+        GlobalTickFields {
+            last_tick_ms: 999,
+            cap_alert_ms: 11,
+            missing_alert_ms: 22,
+            cap_remaining: 7,
+        },
     );
     assert_eq!(st.last_tick_ms, 999);
     assert_eq!(st.cap_alert_ms, 11);
@@ -44,7 +56,10 @@ fn empty_updates_still_apply_globals() {
 #[test]
 fn unknown_session_ids_are_ignored() {
     let mut st = State::default();
-    st.sessions.push(Session { id: "ses_known".to_string(), ..Default::default() });
+    st.sessions.push(Session {
+        id: "ses_known".to_string(),
+        ..Default::default()
+    });
     let mut u = tf("ses_unknown");
     u.nudges = 7;
     apply_tick_fields(&mut st, &[u], globals(5));
@@ -56,7 +71,10 @@ fn unknown_session_ids_are_ignored() {
 #[test]
 fn duplicate_updates_last_one_wins() {
     let mut st = State::default();
-    st.sessions.push(Session { id: "ses_a".to_string(), ..Default::default() });
+    st.sessions.push(Session {
+        id: "ses_a".to_string(),
+        ..Default::default()
+    });
     let mut first = tf("ses_a");
     first.nudges = 1;
     first.last_action = "first".to_string();
@@ -109,7 +127,10 @@ fn tick_fields_do_not_overwrite_user_settings() {
 #[test]
 fn all_tick_fields_are_applied() {
     let mut st = State::default();
-    st.sessions.push(Session { id: "ses_a".to_string(), ..Default::default() });
+    st.sessions.push(Session {
+        id: "ses_a".to_string(),
+        ..Default::default()
+    });
     let mut u = tf("ses_a");
     u.handled = 101;
     u.prompted = 102;
@@ -146,7 +167,11 @@ fn states_differ_is_symmetric_and_sees_nested_changes() {
     let mut b = a.clone();
     assert!(!states_differ(&a, &b));
     assert!(!states_differ(&b, &a));
-    b.sessions.push(Session { id: "ses_a".to_string(), nudges: 1, ..Default::default() });
+    b.sessions.push(Session {
+        id: "ses_a".to_string(),
+        nudges: 1,
+        ..Default::default()
+    });
     assert!(states_differ(&a, &b));
     assert!(states_differ(&b, &a));
     let mut c = b.clone();

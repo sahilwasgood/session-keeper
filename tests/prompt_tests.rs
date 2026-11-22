@@ -2,12 +2,18 @@ use session_keeper_rust::ui::prompt_display;
 
 #[test]
 fn prompt_display_uses_default_when_unset() {
-    assert_eq!(prompt_display(None::<&str>, "continue, dont stop"), "default: continue, dont stop");
+    assert_eq!(
+        prompt_display(None::<&str>, "continue, dont stop"),
+        "default: continue, dont stop"
+    );
 }
 
 #[test]
 fn prompt_display_shows_custom_prompt() {
-    assert_eq!(prompt_display(Some("keep going"), "continue, dont stop"), "keep going");
+    assert_eq!(
+        prompt_display(Some("keep going"), "continue, dont stop"),
+        "keep going"
+    );
 }
 
 #[test]
@@ -17,10 +23,26 @@ fn prompt_display_ignores_blank_custom_prompt() {
 
 #[test]
 fn filter_matches_id_or_title() {
-    assert!(session_keeper_rust::ui::matches_filter("ses_abc123", "tg", ""));
-    assert!(session_keeper_rust::ui::matches_filter("ses_abc123", "tg", "TG"));
-    assert!(session_keeper_rust::ui::matches_filter("ses_abc123", "tg", "abc"));
-    assert!(!session_keeper_rust::ui::matches_filter("ses_abc123", "tg", "zzz"));
+    assert!(session_keeper_rust::ui::matches_filter(
+        "ses_abc123",
+        "tg",
+        ""
+    ));
+    assert!(session_keeper_rust::ui::matches_filter(
+        "ses_abc123",
+        "tg",
+        "TG"
+    ));
+    assert!(session_keeper_rust::ui::matches_filter(
+        "ses_abc123",
+        "tg",
+        "abc"
+    ));
+    assert!(!session_keeper_rust::ui::matches_filter(
+        "ses_abc123",
+        "tg",
+        "zzz"
+    ));
 }
 
 #[test]
@@ -35,13 +57,20 @@ fn attention_and_priority() {
 
 #[test]
 fn status_change_detection() {
-    assert!(session_keeper_rust::ui::status_changed("working", "waiting"));
-    assert!(!session_keeper_rust::ui::status_changed("waiting", "waiting"));
+    assert!(session_keeper_rust::ui::status_changed(
+        "working", "waiting"
+    ));
+    assert!(!session_keeper_rust::ui::status_changed(
+        "waiting", "waiting"
+    ));
 }
 
 #[test]
 fn rotate_keeps_recent_lines() {
-    let text = (0..3000).map(|i| format!("line {}", i)).collect::<Vec<_>>().join("\n");
+    let text = (0..3000)
+        .map(|i| format!("line {}", i))
+        .collect::<Vec<_>>()
+        .join("\n");
     let out = session_keeper_rust::nudge::rotate_text(&text, 2000, 1000);
     let lines: Vec<&str> = out.lines().collect();
     assert_eq!(lines.len(), 1000);
@@ -65,7 +94,8 @@ fn history_for_sid_filters_and_limits() {
         r#"{"t":1,"sid":"ses_a","kind":"nudge","detail":"x"}"#,
         r#"{"t":2,"sid":"ses_b","kind":"nudge","detail":"y"}"#,
         r#"{"t":3,"sid":"ses_a","kind":"nudge","detail":"z"}"#,
-    ].join("\n");
+    ]
+    .join("\n");
     let lines = session_keeper_rust::ui::history_for_sid(&text, "ses_a", 5);
     assert_eq!(lines.len(), 2);
     assert!(lines[0].contains("\"z\""));

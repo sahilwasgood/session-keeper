@@ -1,8 +1,8 @@
-use std::time::Duration;
-use std::sync::{Mutex, OnceLock};
 use crate::config::Config;
 use crate::db::Status;
 use crate::state::{Session, State};
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decision {
@@ -20,8 +20,16 @@ fn b64(input: &[u8]) -> String {
             | chunk.get(2).copied().unwrap_or(0) as u32;
         out.push(T[((n >> 18) & 63) as usize] as char);
         out.push(T[((n >> 12) & 63) as usize] as char);
-        out.push(if chunk.len() > 1 { T[((n >> 6) & 63) as usize] as char } else { '=' });
-        out.push(if chunk.len() > 2 { T[(n & 63) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            T[((n >> 6) & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            T[(n & 63) as usize] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -31,12 +39,19 @@ fn b64(input: &[u8]) -> String {
 static IO_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn append_and_rotate(path: &std::path::Path, line: &str) {
-    let _guard = IO_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = IO_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
     use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
         let _ = writeln!(f, "{}", line);
     }
     if let Ok(text) = std::fs::read_to_string(path) {
@@ -105,7 +120,9 @@ fn warn_missing_transport() {
 
 /// Returns true when a notification was actually dispatched.
 pub fn notify(title: &str, message: &str) -> bool {
-    if !Config::notifications() { return false; }
+    if !Config::notifications() {
+        return false;
+    }
     if !notify_send_available() {
         warn_missing_transport();
         return false;
@@ -118,7 +135,10 @@ pub fn notify(title: &str, message: &str) -> bool {
     {
         Ok(child) => {
             // Reap the helper so repeated alerts do not leave zombies.
-            std::thread::spawn(move || { let mut child = child; let _ = child.wait(); });
+            std::thread::spawn(move || {
+                let mut child = child;
+                let _ = child.wait();
+            });
             true
         }
         Err(_) => {
@@ -171,11 +191,22 @@ fn encode_segment(value: &str) -> String {
 }
 
 pub fn prompt_url(api: &str, sid: &str) -> String {
-    format!("{}/api/session/{}/prompt", api.trim_end_matches('/'), encode_segment(sid))
+    format!(
+        "{}/api/session/{}/prompt",
+        api.trim_end_matches('/'),
+        encode_segment(sid)
+    )
 }
 
 pub fn send_nudge(api: &str, password: &str, sid: &str, text: &str) -> Result<(), String> {
-    send_nudge_with_retry(api, password, sid, text, std::time::Duration::from_secs(10), 2)
+    send_nudge_with_retry(
+        api,
+        password,
+        sid,
+        text,
+        std::time::Duration::from_secs(10),
+        2,
+    )
 }
 
 fn is_retryable_error(err: &str) -> bool {
@@ -204,7 +235,9 @@ pub fn send_nudge_with_retry(
             Err(e) => {
                 last = e;
                 let retryable = is_retryable_error(&last);
-                if !retryable || i + 1 >= attempts { break; }
+                if !retryable || i + 1 >= attempts {
+                    break;
+                }
                 let nanos = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .map(|d| d.subsec_nanos())
@@ -272,7 +305,6 @@ pub fn log_line(message: &str) {
     append_and_rotate(&Config::log_path(), &line);
 }
 
-
 #[derive(Debug, Clone)]
 pub struct ModelInfo {
     pub id: String,
@@ -298,23 +330,45 @@ pub fn fetch_models_result(api: &str, password: &str) -> Result<Vec<ModelInfo>, 
     if !(200..300).contains(&resp.status()) {
         return Err(format!("OpenCode API returned HTTP {}", resp.status()));
     }
-    let text = resp.into_string().map_err(|e| format!("cannot read API response: {}", e))?;
+    let text = resp
+        .into_string()
+        .map_err(|e| format!("cannot read API response: {}", e))?;
     let value: serde_json::Value = serde_json::from_str(&text)
         .map_err(|_| "OpenCode API returned malformed JSON".to_string())?;
-    let items = value.get("data").and_then(|d| d.as_array()).cloned()
+    let items = value
+        .get("data")
+        .and_then(|d| d.as_array())
+        .cloned()
         .ok_or_else(|| "OpenCode API response has no data array".to_string())?;
-    Ok(items.iter().filter_map(|m| {
-        Some(ModelInfo {
-            id: m.get("id")?.as_str()?.to_string(),
-            provider: m.get("providerID")?.as_str()?.to_string(),
-            name: m.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string(),
+    Ok(items
+        .iter()
+        .filter_map(|m| {
+            Some(ModelInfo {
+                id: m.get("id")?.as_str()?.to_string(),
+                provider: m.get("providerID")?.as_str()?.to_string(),
+                name: m
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            })
         })
-    }).collect())
+        .collect())
 }
 
-pub fn switch_model(api: &str, password: &str, sid: &str, model_id: &str, provider: &str) -> Result<(), String> {
+pub fn switch_model(
+    api: &str,
+    password: &str,
+    sid: &str,
+    model_id: &str,
+    provider: &str,
+) -> Result<(), String> {
     let auth = format!("Basic {}", b64(format!("opencode:{}", password).as_bytes()));
-    let url = format!("{}/api/session/{}/model", api.trim_end_matches('/'), encode_segment(sid));
+    let url = format!(
+        "{}/api/session/{}/model",
+        api.trim_end_matches('/'),
+        encode_segment(sid)
+    );
     let body = serde_json::json!({"model": {"id": model_id, "providerID": provider}}).to_string();
     let resp = ureq::post(&url)
         .timeout(Duration::from_secs(10))
@@ -322,7 +376,11 @@ pub fn switch_model(api: &str, password: &str, sid: &str, model_id: &str, provid
         .set("Content-Type", "application/json")
         .send_string(&body)
         .map_err(|e| e.to_string())?;
-    if (200..300).contains(&resp.status()) { Ok(()) } else { Err(format!("HTTP {}", resp.status())) }
+    if (200..300).contains(&resp.status()) {
+        Ok(())
+    } else {
+        Err(format!("HTTP {}", resp.status()))
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -349,17 +407,29 @@ pub fn fetch_sessions_result(api: &str, password: &str) -> Result<Vec<SessionInf
     if !(200..300).contains(&resp.status()) {
         return Err(format!("OpenCode API returned HTTP {}", resp.status()));
     }
-    let text = resp.into_string().map_err(|e| format!("cannot read API response: {}", e))?;
+    let text = resp
+        .into_string()
+        .map_err(|e| format!("cannot read API response: {}", e))?;
     let value: serde_json::Value = serde_json::from_str(&text)
         .map_err(|_| "OpenCode API returned malformed JSON".to_string())?;
-    let items = value.get("data").and_then(|d| d.as_array()).cloned()
+    let items = value
+        .get("data")
+        .and_then(|d| d.as_array())
+        .cloned()
         .ok_or_else(|| "OpenCode API response has no data array".to_string())?;
-    Ok(items.iter().filter_map(|s| {
-        Some(SessionInfo {
-            id: s.get("id")?.as_str()?.to_string(),
-            title: s.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string(),
+    Ok(items
+        .iter()
+        .filter_map(|s| {
+            Some(SessionInfo {
+                id: s.get("id")?.as_str()?.to_string(),
+                title: s
+                    .get("title")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            })
         })
-    }).collect())
+        .collect())
 }
 
 fn api_json_array_nonempty(api: &str, password: &str, path: &str) -> bool {
@@ -375,7 +445,11 @@ fn api_json_array_nonempty(api: &str, password: &str, path: &str) -> bool {
     };
     let text = resp.into_string().unwrap_or_default();
     match serde_json::from_str::<serde_json::Value>(&text) {
-        Ok(v) => v.get("data").and_then(|d| d.as_array()).map(|a| !a.is_empty()).unwrap_or(false),
+        Ok(v) => v
+            .get("data")
+            .and_then(|d| d.as_array())
+            .map(|a| !a.is_empty())
+            .unwrap_or(false),
         Err(_) => false,
     }
 }

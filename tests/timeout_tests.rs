@@ -31,7 +31,15 @@ fn hung_api_returns_within_timeout() {
     );
     let elapsed = start.elapsed();
 
-    assert!(result.is_err(), "hung server must produce an error, got {:?}", result);
-    assert!(elapsed < Duration::from_secs(2), "call must return near timeout, took {:?}", elapsed);
+    assert!(
+        result.is_err(),
+        "hung server must produce an error, got {:?}",
+        result
+    );
+    assert!(
+        elapsed < Duration::from_secs(2),
+        "call must return near timeout, took {:?}",
+        elapsed
+    );
     let _ = rx.try_recv();
 }

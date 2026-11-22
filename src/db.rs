@@ -49,7 +49,7 @@ pub fn last_assistant(conn: &Connection, sid: &str) -> (i64, String) {
                         .iter()
                         .filter(|p| p.get("type").and_then(|t| t.as_str()) == Some("text"))
                         .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
-                        .last()
+                        .next_back()
                         .map(str::to_string)
                 })
                 .unwrap_or_default();
@@ -59,9 +59,12 @@ pub fn last_assistant(conn: &Connection, sid: &str) -> (i64, String) {
 }
 
 pub fn session_model(conn: &Connection, sid: &str) -> String {
-    let raw: Option<String> = conn.query_row(
-        "SELECT model FROM session_v2 WHERE id=?1", [sid], |r| r.get(0))
-        .optional().unwrap_or(None);
+    let raw: Option<String> = conn
+        .query_row("SELECT model FROM session_v2 WHERE id=?1", [sid], |r| {
+            r.get(0)
+        })
+        .optional()
+        .unwrap_or(None);
     raw.and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
         .and_then(|v| v.get("id").and_then(|x| x.as_str()).map(str::to_string))
         .unwrap_or_default()
@@ -83,11 +86,13 @@ pub fn last_assistant_text(conn: &Connection, sid: &str) -> String {
 }
 
 pub fn session_title(conn: &Connection, sid: &str) -> String {
-    conn.query_row("SELECT title FROM session_v2 WHERE id=?1", [sid], |r| r.get::<_, Option<String>>(0))
-        .optional()
-        .unwrap_or(None)
-        .and_then(|title| title)
-        .unwrap_or_default()
+    conn.query_row("SELECT title FROM session_v2 WHERE id=?1", [sid], |r| {
+        r.get::<_, Option<String>>(0)
+    })
+    .optional()
+    .unwrap_or(None)
+    .and_then(|title| title)
+    .unwrap_or_default()
 }
 
 pub fn last_idle_ts(conn: &Connection, sid: &str) -> i64 {
@@ -118,9 +123,22 @@ pub fn classify(conn: &Connection, sid: &str, state: &State) -> Status {
         prompted: 0,
         last_nudge: 0,
         nudges: 0,
-        last_action: String::new(), idle_streak: 0, last_hash: None, prev_hash: None, last_status: String::new(), last_alert_ms: 0, question_alert_ms: 0, stalled_alert_ms: 0, missing_alert_ms: 0, failure_alert_ms: 0,
+        last_action: String::new(),
+        idle_streak: 0,
+        last_hash: None,
+        prev_hash: None,
+        last_status: String::new(),
+        last_alert_ms: 0,
+        question_alert_ms: 0,
+        stalled_alert_ms: 0,
+        missing_alert_ms: 0,
+        failure_alert_ms: 0,
     };
-    let sess = state.sessions.iter().find(|s| s.id == sid).unwrap_or(&fallback);
+    let sess = state
+        .sessions
+        .iter()
+        .find(|s| s.id == sid)
+        .unwrap_or(&fallback);
     if !sess.enabled {
         return Status::Clean;
     }

@@ -39,15 +39,24 @@ pub fn short_id(id: &str) -> String {
     if id.len() <= 12 {
         return id.to_string();
     }
-    id.chars().rev().take(12).collect::<Vec<_>>().into_iter().rev().collect()
+    id.chars()
+        .rev()
+        .take(12)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect()
 }
 
 pub fn history_for_sid(text: &str, sid: &str, limit: usize) -> Vec<String> {
     text.lines()
-        .filter(|line| serde_json::from_str::<serde_json::Value>(line)
-            .ok()
-            .and_then(|v| v.get("sid").and_then(|s| s.as_str()).map(str::to_string))
-            .as_deref() == Some(sid))
+        .filter(|line| {
+            serde_json::from_str::<serde_json::Value>(line)
+                .ok()
+                .and_then(|v| v.get("sid").and_then(|s| s.as_str()).map(str::to_string))
+                .as_deref()
+                == Some(sid)
+        })
         .rev()
         .take(limit)
         .map(str::to_string)
@@ -66,11 +75,19 @@ pub fn format_age(ts_ms: i64, now_ms: i64) -> String {
     if secs < 3600 {
         let m = secs / 60;
         let s = secs % 60;
-        return if s == 0 { format!("{}m", m) } else { format!("{}m {}s", m, s) };
+        return if s == 0 {
+            format!("{}m", m)
+        } else {
+            format!("{}m {}s", m, s)
+        };
     }
     let h = secs / 3600;
     let m = (secs % 3600) / 60;
-    if m == 0 { format!("{}h", h) } else { format!("{}h {}m", h, m) }
+    if m == 0 {
+        format!("{}h", h)
+    } else {
+        format!("{}h {}m", h, m)
+    }
 }
 
 pub fn sort_key(status: &Status, title: &str, id: &str, by_name: bool) -> (i32, String) {
@@ -98,7 +115,9 @@ pub fn status_priority(status: &Status) -> i32 {
 }
 
 pub fn matches_filter(id: &str, title: &str, filter: &str) -> bool {
-    if filter.trim().is_empty() { return true; }
+    if filter.trim().is_empty() {
+        return true;
+    }
     let f = filter.trim().to_lowercase();
     id.to_lowercase().contains(&f) || title.to_lowercase().contains(&f)
 }

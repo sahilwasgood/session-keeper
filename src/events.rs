@@ -16,7 +16,10 @@ pub fn is_relevant_event_line(line: &str) -> bool {
     };
     matches!(
         value.get("type").and_then(|t| t.as_str()),
-        Some("session.idle") | Some("session.status") | Some("permission.asked") | Some("form.created")
+        Some("session.idle")
+            | Some("session.status")
+            | Some("permission.asked")
+            | Some("form.created")
     )
 }
 
@@ -30,8 +33,16 @@ fn auth_header(password: &str) -> String {
             | chunk.get(2).copied().unwrap_or(0) as u32;
         out.push(TABLE[((n >> 18) & 63) as usize] as char);
         out.push(TABLE[((n >> 12) & 63) as usize] as char);
-        out.push(if chunk.len() > 1 { TABLE[((n >> 6) & 63) as usize] as char } else { '=' });
-        out.push(if chunk.len() > 2 { TABLE[(n & 63) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            TABLE[((n >> 6) & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            TABLE[(n & 63) as usize] as char
+        } else {
+            '='
+        });
     }
     format!("Basic {}", out)
 }
@@ -97,7 +108,10 @@ pub fn watch_events(
                     was_connected = false;
                 }
                 let now = Instant::now();
-                if last_error.map(|t| now.duration_since(t) >= Duration::from_secs(60)).unwrap_or(true) {
+                if last_error
+                    .map(|t| now.duration_since(t) >= Duration::from_secs(60))
+                    .unwrap_or(true)
+                {
                     crate::nudge::log_line(&format!("event stream retry: {}", e));
                     last_error = Some(now);
                 }

@@ -125,7 +125,14 @@ fn repeated_dry_run_remains_explicit() {
 
 #[test]
 fn help_text_lists_the_documented_modes() {
-    for flag in ["--check-now", "--kick", "--export-state", "--import-state", "--json", "--dry-run"] {
+    for flag in [
+        "--check-now",
+        "--kick",
+        "--export-state",
+        "--import-state",
+        "--json",
+        "--dry-run",
+    ] {
         assert!(HELP.contains(flag), "help is missing {}", flag);
     }
 }

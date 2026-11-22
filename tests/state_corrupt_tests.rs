@@ -16,16 +16,26 @@ fn corrupt_json_returns_defaults_and_keeps_backup() {
     let s = State::load_from_path(&path);
     assert!(s.sessions.is_empty());
     assert!(s.enabled);
-    assert!(session_keeper_rust::state::state_was_corrupt(), "corrupt load must be reported");
+    assert!(
+        session_keeper_rust::state::state_was_corrupt(),
+        "corrupt load must be reported"
+    );
     // A second load before any save must not create another backup.
     let _ = State::load_from_path(&path);
     let backups: Vec<_> = std::fs::read_dir(&d)
         .unwrap()
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_string_lossy().starts_with("state.json.corrupt-"))
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("state.json.corrupt-")
+        })
         .collect();
     assert_eq!(backups.len(), 1, "exactly one corrupt backup expected");
-    assert_eq!(std::fs::read_to_string(backups[0].path()).unwrap(), original);
+    assert_eq!(
+        std::fs::read_to_string(backups[0].path()).unwrap(),
+        original
+    );
     std::fs::remove_dir_all(&d).ok();
 }
 
@@ -86,7 +96,10 @@ fn save_overwrites_and_leaves_no_tmp_file() {
     st.save_to_path(&path).unwrap();
     let loaded = State::load_from_path(&path);
     assert_eq!(loaded.min_gap, 33);
-    assert!(!path.with_extension("tmp").exists(), "tmp file must be renamed away");
+    assert!(
+        !path.with_extension("tmp").exists(),
+        "tmp file must be renamed away"
+    );
     std::fs::remove_dir_all(&d).ok();
 }
 
@@ -104,7 +117,11 @@ fn unknown_extra_fields_are_ignored() {
 #[test]
 fn states_differ_detects_nested_session_change() {
     let mut a = State::default();
-    a.sessions.push(Session { id: "ses_a".to_string(), nudges: 1, ..Default::default() });
+    a.sessions.push(Session {
+        id: "ses_a".to_string(),
+        nudges: 1,
+        ..Default::default()
+    });
     let mut b = a.clone();
     assert!(!states_differ(&a, &b));
     b.sessions[0].nudges = 2;
@@ -130,6 +147,9 @@ fn import_backup_preserves_previous_state() {
     std::env::set_var("SESSION_KEEPER_STATE", &state);
     let backup = session_keeper_rust::state::backup_state().expect("backup expected");
     assert!(backup.exists());
-    assert_eq!(std::fs::read_to_string(&backup).unwrap(), std::fs::read_to_string(&state).unwrap());
+    assert_eq!(
+        std::fs::read_to_string(&backup).unwrap(),
+        std::fs::read_to_string(&state).unwrap()
+    );
     std::fs::remove_dir_all(&d).ok();
 }

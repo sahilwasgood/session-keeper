@@ -19,7 +19,10 @@ fn fixture() -> State {
         nudges: 5,
         ..Default::default()
     });
-    st.sessions.push(Session { id: "ses_sync_b".to_string(), ..Default::default() });
+    st.sessions.push(Session {
+        id: "ses_sync_b".to_string(),
+        ..Default::default()
+    });
     st
 }
 
@@ -54,7 +57,11 @@ fn export_writes_current_state_to_backup_path() {
     let original = fixture();
     std::fs::write(&state, serde_json::to_string_pretty(&original).unwrap()).unwrap();
     let out = run(&["--export-state", backup.to_str().unwrap()], &state, &lock);
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let exported: State = serde_json::from_slice(&std::fs::read(&backup).unwrap()).unwrap();
     assert_same(&original, &exported);
     std::fs::remove_dir_all(&d).ok();
@@ -76,7 +83,11 @@ fn import_restores_state_from_backup_path() {
     std::fs::write(&state, serde_json::to_string_pretty(&changed).unwrap()).unwrap();
 
     let out = run(&["--import-state", backup.to_str().unwrap()], &state, &lock);
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let restored: State = serde_json::from_slice(&std::fs::read(&state).unwrap()).unwrap();
     assert_same(&original, &restored);
     std::fs::remove_dir_all(&d).ok();
@@ -107,6 +118,9 @@ fn export_to_missing_parent_directory_fails() {
     std::fs::write(&state, serde_json::to_string(&fixture()).unwrap()).unwrap();
     let target = d.join("no-such-dir/backup.json");
     let out = run(&["--export-state", target.to_str().unwrap()], &state, &lock);
-    assert!(!out.status.success(), "export into a missing directory must fail");
+    assert!(
+        !out.status.success(),
+        "export into a missing directory must fail"
+    );
     std::fs::remove_dir_all(&d).ok();
 }

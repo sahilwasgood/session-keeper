@@ -46,16 +46,33 @@ fn fixture() -> State {
 fn json_status_has_expected_schema_and_values() {
     let d = dir("schema");
     let out = run(&d, &serde_json::to_string_pretty(&fixture()).unwrap());
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let parsed: Value = serde_json::from_slice(&out.stdout).unwrap();
-    let items = parsed.as_array().expect("status output must be a JSON array");
+    let items = parsed
+        .as_array()
+        .expect("status output must be a JSON array");
     assert_eq!(items.len(), 2);
     let keys = [
-        "id", "enabled", "status", "reason", "model", "nudges", "last_action",
-        "last_nudge_ms", "min_gap_s", "session_cap_per_hour", "away_mode",
+        "id",
+        "enabled",
+        "status",
+        "reason",
+        "model",
+        "nudges",
+        "last_action",
+        "last_nudge_ms",
+        "min_gap_s",
+        "session_cap_per_hour",
+        "away_mode",
     ];
     for item in items {
-        let obj = item.as_object().expect("each status entry must be an object");
+        let obj = item
+            .as_object()
+            .expect("each status entry must be an object");
         for key in keys {
             assert!(obj.contains_key(key), "missing key {}", key);
         }
@@ -127,7 +144,10 @@ fn json_output_is_a_single_line() {
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
     let body = stdout.trim_end_matches('\n');
-    assert!(!body.contains('\n'), "compact JSON must not be pretty printed");
+    assert!(
+        !body.contains('\n'),
+        "compact JSON must not be pretty printed"
+    );
     std::fs::remove_dir_all(&d).ok();
 }
 
@@ -143,11 +163,19 @@ fn check_now_json_is_valid_with_expected_shape() {
         .env("SESSION_KEEPER_DRIVE", &d)
         .env("SESSION_KEEPER_LOCK", d.join("keeper.lock"))
         .env("SESSION_KEEPER_API", "http://127.0.0.1:1")
-        .output().unwrap();
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let parsed: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert!(parsed.get("summary").and_then(|v| v.as_str()).is_some());
-    assert!(parsed.get("cap_remaining").and_then(|v| v.as_i64()).is_some());
+    assert!(parsed
+        .get("cap_remaining")
+        .and_then(|v| v.as_i64())
+        .is_some());
     assert!(parsed.get("views").and_then(|v| v.as_array()).is_some());
     std::fs::remove_dir_all(&d).ok();
 }

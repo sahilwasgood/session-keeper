@@ -19,7 +19,11 @@ fn save_failure_is_logged_once() {
 
     let text = std::fs::read_to_string(&log).unwrap_or_default();
     let hits = text.matches("State save failed").count();
-    assert_eq!(hits, 1, "expected exactly one save-failure log line, got {}", hits);
+    assert_eq!(
+        hits, 1,
+        "expected exactly one save-failure log line, got {}",
+        hits
+    );
 
     std::fs::remove_dir_all(&dir).ok();
 }

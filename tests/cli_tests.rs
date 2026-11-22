@@ -41,11 +41,19 @@ fn kick_mode_requires_session_id() {
 #[test]
 fn set_model_mode_reads_three_values() {
     let o = parse_args(&args(&[
-        "session-keeper-rust", "--set-model", "ses_abc", "model-x", "provider-y",
+        "session-keeper-rust",
+        "--set-model",
+        "ses_abc",
+        "model-x",
+        "provider-y",
     ]));
     assert_eq!(
         o.mode,
-        Mode::SetModel("ses_abc".to_string(), "model-x".to_string(), "provider-y".to_string())
+        Mode::SetModel(
+            "ses_abc".to_string(),
+            "model-x".to_string(),
+            "provider-y".to_string()
+        )
     );
 }
 
@@ -78,7 +86,10 @@ fn pause_and_resume_modes() {
 #[test]
 fn set_prompt_mode() {
     let o = parse_args(&args(&[
-        "session-keeper-rust", "--set-prompt", "ses_a", "keep working",
+        "session-keeper-rust",
+        "--set-prompt",
+        "ses_a",
+        "keep working",
     ]));
     assert_eq!(
         o.mode,
@@ -88,13 +99,23 @@ fn set_prompt_mode() {
 
 #[test]
 fn watch_and_version_modes() {
-    assert_eq!(parse_args(&args(&["session-keeper-rust", "--watch"])).mode, Mode::Watch);
-    assert_eq!(parse_args(&args(&["session-keeper-rust", "--version"])).mode, Mode::Version);
+    assert_eq!(
+        parse_args(&args(&["session-keeper-rust", "--watch"])).mode,
+        Mode::Watch
+    );
+    assert_eq!(
+        parse_args(&args(&["session-keeper-rust", "--version"])).mode,
+        Mode::Version
+    );
 }
 
 #[test]
 fn export_state_mode_with_path() {
-    let o = parse_args(&args(&["session-keeper-rust", "--export-state", "/tmp/state.json"]));
+    let o = parse_args(&args(&[
+        "session-keeper-rust",
+        "--export-state",
+        "/tmp/state.json",
+    ]));
     assert_eq!(o.mode, Mode::ExportState("/tmp/state.json".to_string()));
     let bad = parse_args(&args(&["session-keeper-rust", "--export-state"]));
     assert_eq!(bad.mode, Mode::Help);
@@ -109,7 +130,11 @@ fn json_flag_for_status() {
 
 #[test]
 fn import_state_mode_with_path() {
-    let o = parse_args(&args(&["session-keeper-rust", "--import-state", "/tmp/state.json"]));
+    let o = parse_args(&args(&[
+        "session-keeper-rust",
+        "--import-state",
+        "/tmp/state.json",
+    ]));
     assert_eq!(o.mode, Mode::ImportState("/tmp/state.json".to_string()));
     let bad = parse_args(&args(&["session-keeper-rust", "--import-state"]));
     assert_eq!(bad.mode, Mode::Help);
@@ -117,7 +142,12 @@ fn import_state_mode_with_path() {
 
 #[test]
 fn explicit_dry_run_is_tracked() {
-    let o = parse_args(&args(&["session-keeper-rust", "--kick", "ses_a", "--dry-run"]));
+    let o = parse_args(&args(&[
+        "session-keeper-rust",
+        "--kick",
+        "ses_a",
+        "--dry-run",
+    ]));
     assert!(o.dry_run);
     assert!(o.explicit_dry);
     let p = parse_args(&args(&["session-keeper-rust", "--status"]));
@@ -133,14 +163,23 @@ fn kick_does_not_consume_a_flag_as_session_id() {
 #[test]
 fn set_setting_mode_parses_key_value() {
     let o = parse_args(&args(&[
-        "session-keeper-rust", "--set-setting", "min_gap", "25",
+        "session-keeper-rust",
+        "--set-setting",
+        "min_gap",
+        "25",
     ]));
-    assert_eq!(o.mode, Mode::SetSetting("min_gap".to_string(), "25".to_string()));
+    assert_eq!(
+        o.mode,
+        Mode::SetSetting("min_gap".to_string(), "25".to_string())
+    );
 }
 
 #[test]
 fn sessions_mode() {
-    assert_eq!(parse_args(&args(&["session-keeper-rust", "--sessions"])).mode, Mode::Sessions);
+    assert_eq!(
+        parse_args(&args(&["session-keeper-rust", "--sessions"])).mode,
+        Mode::Sessions
+    );
 }
 
 #[test]
@@ -158,8 +197,24 @@ fn doctor_mode() {
 
 #[test]
 fn set_setting_accepts_slow_cooldown_keys() {
-    let o = parse_args(&args(&["session-keeper-rust", "--set-setting", "missing_cooldown", "7200"]));
-    assert_eq!(o.mode, Mode::SetSetting("missing_cooldown".into(), "7200".into()));
-    let o2 = parse_args(&args(&["session-keeper-rust", "--set-setting", "cap_cooldown", "60"]));
-    assert_eq!(o2.mode, Mode::SetSetting("cap_cooldown".into(), "60".into()));
+    let o = parse_args(&args(&[
+        "session-keeper-rust",
+        "--set-setting",
+        "missing_cooldown",
+        "7200",
+    ]));
+    assert_eq!(
+        o.mode,
+        Mode::SetSetting("missing_cooldown".into(), "7200".into())
+    );
+    let o2 = parse_args(&args(&[
+        "session-keeper-rust",
+        "--set-setting",
+        "cap_cooldown",
+        "60",
+    ]));
+    assert_eq!(
+        o2.mode,
+        Mode::SetSetting("cap_cooldown".into(), "60".into())
+    );
 }

@@ -11,7 +11,16 @@ fn session() -> Session {
         prompted: 0,
         last_nudge: 0,
         nudges: 0,
-        last_action: String::new(), idle_streak: 0, last_hash: None, prev_hash: None, last_status: String::new(), last_alert_ms: 0, question_alert_ms: 0, stalled_alert_ms: 0, missing_alert_ms: 0, failure_alert_ms: 0,
+        last_action: String::new(),
+        idle_streak: 0,
+        last_hash: None,
+        prev_hash: None,
+        last_status: String::new(),
+        last_alert_ms: 0,
+        question_alert_ms: 0,
+        stalled_alert_ms: 0,
+        missing_alert_ms: 0,
+        failure_alert_ms: 0,
     }
 }
 
@@ -35,16 +44,27 @@ fn fixture(rows: &[(&str, &str, i64, &str)]) -> Connection {
 }
 
 fn assistant(text: &str) -> String {
-    format!(r#"{{"content":[{{"type":"text","text":{}}}]}}"#, serde_json::to_string(text).unwrap())
+    format!(
+        r#"{{"content":[{{"type":"text","text":{}}}]}}"#,
+        serde_json::to_string(text).unwrap()
+    )
 }
 
 #[test]
 fn assistant_question_is_waiting() {
     let conn = fixture(&[
-        ("assistant", "ses_test", 900, &assistant("Which file should I edit?")),
+        (
+            "assistant",
+            "ses_test",
+            900,
+            &assistant("Which file should I edit?"),
+        ),
         ("idle", "ses_test", 1000, r#"{}"#),
     ]);
-    assert_eq!(classify(&conn, "ses_test", &State::default()), Status::Waiting);
+    assert_eq!(
+        classify(&conn, "ses_test", &State::default()),
+        Status::Waiting
+    );
 }
 
 #[test]
@@ -61,16 +81,27 @@ fn question_detection_trims_and_handles_fullwidth_mark() {
 #[test]
 fn question_with_trailing_newline_is_waiting() {
     let conn = fixture(&[
-        ("assistant", "ses_test", 900, &assistant("Which file should I edit?\n")),
+        (
+            "assistant",
+            "ses_test",
+            900,
+            &assistant("Which file should I edit?\n"),
+        ),
         ("idle", "ses_test", 1000, r#"{}"#),
     ]);
-    assert_eq!(classify(&conn, "ses_test", &State::default()), Status::Waiting);
+    assert_eq!(
+        classify(&conn, "ses_test", &State::default()),
+        Status::Waiting
+    );
 }
 
 #[test]
 fn idle_without_assistant_is_stalled() {
     let conn = fixture(&[("idle", "ses_test", 1000, r#"{}"#)]);
-    assert_eq!(classify(&conn, "ses_test", &State::default()), Status::Stalled);
+    assert_eq!(
+        classify(&conn, "ses_test", &State::default()),
+        Status::Stalled
+    );
 }
 
 #[test]
@@ -95,5 +126,8 @@ fn handled_idle_is_nudged() {
 #[test]
 fn no_idle_event_is_clean() {
     let conn = fixture(&[("assistant", "ses_test", 900, &assistant("working"))]);
-    assert_eq!(classify(&conn, "ses_test", &State::default()), Status::Clean);
+    assert_eq!(
+        classify(&conn, "ses_test", &State::default()),
+        Status::Clean
+    );
 }

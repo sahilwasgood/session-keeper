@@ -27,13 +27,23 @@ fn short_id_keeps_the_tail() {
 
 #[test]
 fn summary_line_reports_actions() {
-    assert_eq!(summary_line("12:34:56", 2, 1), "Last check 12:34:56   nudged 2   held 1");
+    assert_eq!(
+        summary_line("12:34:56", 2, 1),
+        "Last check 12:34:56   nudged 2   held 1"
+    );
 }
 
 fn luminance(hex: &str) -> f64 {
-    let channels: Vec<f64> = (1..=5).step_by(2)
+    let channels: Vec<f64> = (1..=5)
+        .step_by(2)
         .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap() as f64 / 255.0)
-        .map(|c| if c <= 0.03928 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) })
+        .map(|c| {
+            if c <= 0.03928 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        })
         .collect();
     0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
 }

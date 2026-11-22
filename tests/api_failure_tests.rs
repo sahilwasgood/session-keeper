@@ -28,8 +28,19 @@ fn scripted(responses: Vec<String>) -> (String, mpsc::Receiver<usize>) {
 
 #[test]
 fn retries_5xx_until_success() {
-    let (api, rx) = scripted(vec![reply("500 Internal Server Error"), reply("500 Internal Server Error"), reply("200 OK")]);
-    let result = send_nudge_with_retry(&api, "pw", "ses_test", "continue", Duration::from_millis(2000), 3);
+    let (api, rx) = scripted(vec![
+        reply("500 Internal Server Error"),
+        reply("500 Internal Server Error"),
+        reply("200 OK"),
+    ]);
+    let result = send_nudge_with_retry(
+        &api,
+        "pw",
+        "ses_test",
+        "continue",
+        Duration::from_millis(2000),
+        3,
+    );
     assert!(result.is_ok(), "{:?}", result);
     let counts: Vec<usize> = rx.try_iter().collect();
     assert_eq!(counts.len(), 3, "expected three attempts, got {:?}", counts);
@@ -38,7 +49,14 @@ fn retries_5xx_until_success() {
 #[test]
 fn single_attempt_5xx_returns_error() {
     let (api, rx) = scripted(vec![reply("503 Service Unavailable")]);
-    let result = send_nudge_with_retry(&api, "pw", "ses_test", "continue", Duration::from_millis(2000), 1);
+    let result = send_nudge_with_retry(
+        &api,
+        "pw",
+        "ses_test",
+        "continue",
+        Duration::from_millis(2000),
+        1,
+    );
     assert!(result.is_err());
     assert_eq!(rx.try_iter().count(), 1);
 }
@@ -46,15 +64,33 @@ fn single_attempt_5xx_returns_error() {
 #[test]
 fn client_error_is_not_retried() {
     let (api, rx) = scripted(vec![reply("400 Bad Request")]);
-    let result = send_nudge_with_retry(&api, "pw", "ses_test", "continue", Duration::from_millis(2000), 3);
+    let result = send_nudge_with_retry(
+        &api,
+        "pw",
+        "ses_test",
+        "continue",
+        Duration::from_millis(2000),
+        3,
+    );
     assert!(result.is_err());
-    assert_eq!(rx.try_iter().count(), 1, "4xx other than 429 must not be retried");
+    assert_eq!(
+        rx.try_iter().count(),
+        1,
+        "4xx other than 429 must not be retried"
+    );
 }
 
 #[test]
 fn too_many_requests_is_retried() {
     let (api, rx) = scripted(vec![reply("429 Too Many Requests"), reply("200 OK")]);
-    let result = send_nudge_with_retry(&api, "pw", "ses_test", "continue", Duration::from_millis(2000), 2);
+    let result = send_nudge_with_retry(
+        &api,
+        "pw",
+        "ses_test",
+        "continue",
+        Duration::from_millis(2000),
+        2,
+    );
     assert!(result.is_ok(), "{:?}", result);
     assert_eq!(rx.try_iter().count(), 2);
 }
@@ -94,7 +130,11 @@ fn hung_server_times_out() {
         Duration::from_millis(250),
     );
     assert!(result.is_err(), "hung server must fail: {:?}", result);
-    assert!(start.elapsed() < Duration::from_millis(1500), "took {:?}", start.elapsed());
+    assert!(
+        start.elapsed() < Duration::from_millis(1500),
+        "took {:?}",
+        start.elapsed()
+    );
 }
 
 #[test]
@@ -102,9 +142,17 @@ fn malformed_success_body_is_not_a_success() {
     let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 8\r\nConnection: close\r\n\r\nnot json".to_string();
     let (api, _rx) = scripted(vec![response]);
     let result = session_keeper_rust::nudge::send_nudge_with_timeout(
-        &api, "pw", "ses_x", "continue", std::time::Duration::from_millis(2000),
+        &api,
+        "pw",
+        "ses_x",
+        "continue",
+        std::time::Duration::from_millis(2000),
     );
-    assert!(result.is_err(), "malformed 200 body must be rejected: {:?}", result);
+    assert!(
+        result.is_err(),
+        "malformed 200 body must be rejected: {:?}",
+        result
+    );
 }
 
 #[test]
@@ -112,7 +160,9 @@ fn pending_permission_detects_human_input() {
     let body = r#"{"data":[{"id":"perm1"}]}"#;
     let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
     let (api, _rx) = scripted(vec![response]);
-    assert!(session_keeper_rust::nudge::has_pending_human_input(&api, "pw", "ses_x"));
+    assert!(session_keeper_rust::nudge::has_pending_human_input(
+        &api, "pw", "ses_x"
+    ));
 }
 
 #[test]
@@ -120,5 +170,7 @@ fn empty_permission_means_no_human_input() {
     let body = r#"{"data":[]}"#;
     let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
     let (api, _rx) = scripted(vec![response]);
-    assert!(!session_keeper_rust::nudge::has_pending_human_input(&api, "pw", "ses_x"));
+    assert!(!session_keeper_rust::nudge::has_pending_human_input(
+        &api, "pw", "ses_x"
+    ));
 }

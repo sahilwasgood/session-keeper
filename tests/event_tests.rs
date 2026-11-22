@@ -2,14 +2,22 @@ use session_keeper_rust::events::is_relevant_event_line;
 
 #[test]
 fn relevant_event_lines_are_detected() {
-    assert!(is_relevant_event_line(r#"data: {"type":"session.idle","data":{}}"#));
-    assert!(is_relevant_event_line(r#"data: {"type":"permission.asked","data":{}}"#));
-    assert!(is_relevant_event_line(r#"data: {"type":"form.created","data":{}}"#));
+    assert!(is_relevant_event_line(
+        r#"data: {"type":"session.idle","data":{}}"#
+    ));
+    assert!(is_relevant_event_line(
+        r#"data: {"type":"permission.asked","data":{}}"#
+    ));
+    assert!(is_relevant_event_line(
+        r#"data: {"type":"form.created","data":{}}"#
+    ));
 }
 
 #[test]
 fn unrelated_or_malformed_lines_are_ignored() {
-    assert!(!is_relevant_event_line(r#"data: {"type":"server.connected","data":{}}"#));
+    assert!(!is_relevant_event_line(
+        r#"data: {"type":"server.connected","data":{}}"#
+    ));
     assert!(!is_relevant_event_line("event: session.idle"));
     assert!(!is_relevant_event_line("data: not json"));
     assert!(!is_relevant_event_line(""));
@@ -54,12 +62,24 @@ fn watcher_marks_disconnected_when_stream_ends_cleanly() {
     let watcher_stop = stop.clone();
     let watcher_connected = connected.clone();
     let handle = std::thread::spawn(move || {
-        session_keeper_rust::events::watch_events(&api, "pw", wake_tx, watcher_stop, watcher_connected);
+        session_keeper_rust::events::watch_events(
+            &api,
+            "pw",
+            wake_tx,
+            watcher_stop,
+            watcher_connected,
+        );
     });
-    assert!(wake_rx.recv_timeout(Duration::from_secs(3)).is_ok(), "wake expected");
+    assert!(
+        wake_rx.recv_timeout(Duration::from_secs(3)).is_ok(),
+        "wake expected"
+    );
     let mut offline = false;
     for _ in 0..40 {
-        if !connected.load(Ordering::Relaxed) { offline = true; break; }
+        if !connected.load(Ordering::Relaxed) {
+            offline = true;
+            break;
+        }
         std::thread::sleep(Duration::from_millis(50));
     }
     stop.store(true, Ordering::Relaxed);

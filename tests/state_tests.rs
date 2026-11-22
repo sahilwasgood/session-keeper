@@ -30,8 +30,14 @@ fn save_then_load_preserves_session_fields() {
         nudges: 4,
         question_alert_ms: 111,
         stalled_alert_ms: 222,
-        missing_alert_ms: 333, failure_alert_ms: 444,
-        last_action: "nudged".to_string(), idle_streak: 0, last_hash: None, prev_hash: None, last_status: String::new(), last_alert_ms: 0,
+        missing_alert_ms: 333,
+        failure_alert_ms: 444,
+        last_action: "nudged".to_string(),
+        idle_streak: 0,
+        last_hash: None,
+        prev_hash: None,
+        last_status: String::new(),
+        last_alert_ms: 0,
     });
     let path = Path::new("/tmp/sk-roundtrip-state.json");
     s.save_to_path(path).unwrap();
@@ -70,11 +76,17 @@ fn corrupt_state_is_backed_up() {
     let backed: Vec<_> = std::fs::read_dir("/tmp")
         .unwrap()
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_string_lossy().starts_with("sk-corrupt-state.json.corrupt-"))
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with("sk-corrupt-state.json.corrupt-")
+        })
         .collect();
     assert!(!backed.is_empty(), "corrupt state backup missing");
     std::fs::remove_file(path).ok();
-    for b in backed { std::fs::remove_file(b.path()).ok(); }
+    for b in backed {
+        std::fs::remove_file(b.path()).ok();
+    }
 }
 
 #[test]
@@ -96,7 +108,8 @@ fn tick_merge_preserves_user_edits() {
         last_nudge: 100,
         nudges: before_nudges + 1,
         idle_streak: 0,
-        last_hash: None, prev_hash: None,
+        last_hash: None,
+        prev_hash: None,
         last_action: "nudged".to_string(),
         last_status: "Due".to_string(),
         last_alert_ms: 0,
@@ -105,14 +118,21 @@ fn tick_merge_preserves_user_edits() {
         missing_alert_ms: 333,
         failure_alert_ms: 0,
     }];
-    apply_tick_fields(&mut st, &updates, GlobalTickFields {
-        last_tick_ms: 100,
-        cap_alert_ms: 0,
-        missing_alert_ms: 0,
-        cap_remaining: -1,
-    });
+    apply_tick_fields(
+        &mut st,
+        &updates,
+        GlobalTickFields {
+            last_tick_ms: 100,
+            cap_alert_ms: 0,
+            missing_alert_ms: 0,
+            cap_remaining: -1,
+        },
+    );
     assert_eq!(st.sessions[0].nudges, 8);
-    assert!(!st.sessions[0].enabled, "user pause must survive tick merge");
+    assert!(
+        !st.sessions[0].enabled,
+        "user pause must survive tick merge"
+    );
     assert_eq!(st.sessions[0].prompt.as_deref(), Some("my prompt"));
     assert_eq!(st.last_tick_ms, 100);
 }
@@ -138,6 +158,11 @@ fn record_nudge_keeps_only_recent_hour() {
     assert_eq!(st.recent_nudges.len(), 2);
     st.record_nudge(now);
     assert_eq!(st.recent_nudges.len(), 3);
-    for _ in 0..600 { st.record_nudge(now); }
-    assert!(st.recent_nudges.len() <= 500, "rolling list must stay bounded");
+    for _ in 0..600 {
+        st.record_nudge(now);
+    }
+    assert!(
+        st.recent_nudges.len() <= 500,
+        "rolling list must stay bounded"
+    );
 }

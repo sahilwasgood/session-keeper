@@ -24,15 +24,25 @@ fn retries_once_after_server_error() {
                 let _ = s.write_all(response.as_bytes());
                 let _ = tx.send(count);
             }
-            if count >= 2 { break; }
+            if count >= 2 {
+                break;
+            }
         }
     });
 
     let result = session_keeper_rust::nudge::send_nudge_with_retry(
-        &format!("http://{}", addr), "pw", "ses_test", "continue",
-        Duration::from_millis(2000), 2,
+        &format!("http://{}", addr),
+        "pw",
+        "ses_test",
+        "continue",
+        Duration::from_millis(2000),
+        2,
     );
     assert!(result.is_ok(), "retry should succeed: {:?}", result);
     let counts: Vec<i32> = rx.try_iter().collect();
-    assert!(counts.len() >= 2, "server should see two requests, saw {:?}", counts);
+    assert!(
+        counts.len() >= 2,
+        "server should see two requests, saw {:?}",
+        counts
+    );
 }

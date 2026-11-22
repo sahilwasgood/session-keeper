@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Codebase formatted with rustfmt; production code is Clippy-clean. CI now gates both formatting and production lint.
+
 ## v0.3.0 (2026-11-22)
 
 - Configurable timestamp display: device-local by default (or fixed UTC offset), 12/24-hour clock, and selectable date granularity. Same-day entries show time only; older ones include the date.

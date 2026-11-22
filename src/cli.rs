@@ -87,7 +87,10 @@ pub fn parse_args(args: &[String]) -> Options {
                 };
                 i += need;
             }
-            "--dry-run" => { dry_run = true; explicit_dry = true; },
+            "--dry-run" => {
+                dry_run = true;
+                explicit_dry = true;
+            }
             "--json" => json = true,
             "--help" | "-h" => {
                 mode = Mode::Help;
@@ -110,18 +113,13 @@ pub fn parse_args(args: &[String]) -> Options {
                     mode = Mode::Models(None);
                 }
             }
-            "--set-model" => {
-                if i + 3 < args.len() && valid_value(&args[i + 1]) {
-                    mode = Mode::SetModel(
-                        args[i + 1].clone(),
-                        args[i + 2].clone(),
-                        args[i + 3].clone(),
-                    );
-                    i += 3;
-                } else {
-                    mode = Mode::Help;
-                    break;
-                }
+            "--set-model" if i + 3 < args.len() && valid_value(&args[i + 1]) => {
+                mode = Mode::SetModel(
+                    args[i + 1].clone(),
+                    args[i + 2].clone(),
+                    args[i + 3].clone(),
+                );
+                i += 3;
             }
             _ => {
                 mode = Mode::Help;
@@ -130,7 +128,12 @@ pub fn parse_args(args: &[String]) -> Options {
         }
         i += 1;
     }
-    Options { mode, dry_run, json, explicit_dry }
+    Options {
+        mode,
+        dry_run,
+        json,
+        explicit_dry,
+    }
 }
 
 pub const HELP: &str = "Session Keeper
