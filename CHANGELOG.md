@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 (2026-11-22)
 
 - Local wall-clock timestamps in logs and status (previously UTC).
 - Portable OpenCode defaults plus an optional `~/.config/session-keeper/env` override file.
