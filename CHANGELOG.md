@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.1 (2026-11-22)
+
+- Removed internal development notes from the public repository.
+- Status filter and Save settings now redraw the session list immediately.
+- Toolbar Pause all and the Settings pause checkbox stay synchronized.
+- CI gates rustfmt and Clippy for production code.
+
 ## Unreleased
 
 - Toolbar Pause all and the Settings "Watching enabled" checkbox now stay in sync in both directions and across external CLI edits, so saving settings can no longer silently undo a pause.
