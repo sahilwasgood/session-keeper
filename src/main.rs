@@ -414,7 +414,7 @@ fn refresh(
     }
     items.sort_by_key(|(s, v)| {
         sort_key(
-            &v.map(|x| x.status).unwrap_or(Status::Clean),
+            &v.map(|x| x.status).unwrap_or(Status::Unknown),
             v.map(|x| x.title.as_str()).unwrap_or(""),
             &s.id,
             by_name,
@@ -422,7 +422,7 @@ fn refresh(
     });
     for (s, view) in items {
         let view = view;
-        let status = view.map(|v| v.status).unwrap_or(Status::Clean);
+        let status = view.map(|v| v.status).unwrap_or(Status::Unknown);
         let title = view.map(|v| v.title.as_str()).unwrap_or("");
         if !matches_filter(&s.id, title, &filter_text) { continue; }
 
@@ -849,7 +849,7 @@ fn main() {
             let conn = open_db();
             if opts.json {
                 let items: Vec<serde_json::Value> = st.sessions.iter().map(|s| {
-                    let status = conn.as_ref().map(|c| classify(c, &s.id, &st)).unwrap_or(Status::Clean);
+                    let status = conn.as_ref().map(|c| classify(c, &s.id, &st)).unwrap_or(Status::Unknown);
                     let model = conn.as_ref().map(|c| session_model(c, &s.id)).unwrap_or_default();
                     serde_json::json!({
                         "id": s.id,
@@ -869,7 +869,7 @@ fn main() {
                 return;
             }
             for s in &st.sessions {
-                let status = conn.as_ref().map(|c| classify(c, &s.id, &st)).unwrap_or(Status::Clean);
+                let status = conn.as_ref().map(|c| classify(c, &s.id, &st)).unwrap_or(Status::Unknown);
                 let model = conn.as_ref().map(|c| session_model(c, &s.id)).unwrap_or_default();
                 let last_age = if s.last_nudge > 0 { format_age(s.last_nudge, now_ms()) } else { "never".to_string() };
                 print_line(&format!("{}  {}  {} ({})  model={}  nudges={}  last nudge {} ago  last={}",

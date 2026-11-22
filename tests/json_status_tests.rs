@@ -81,6 +81,12 @@ fn json_status_has_expected_schema_and_values() {
     assert_eq!(items[0]["last_action"].as_str(), Some("nudged"));
     assert_eq!(items[1]["id"].as_str(), Some("ses_json_b"));
     assert_eq!(items[1]["enabled"].as_bool(), Some(false));
+    // The fixture points at a nonexistent database, so neither session can
+    // honestly be reported as "working".
+    for item in items {
+        assert_eq!(item["status"].as_str(), Some("unknown"));
+        assert_eq!(item["reason"].as_str(), Some("database_unavailable"));
+    }
     std::fs::remove_dir_all(&d).ok();
 }
 

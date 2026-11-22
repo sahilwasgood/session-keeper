@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::Read;
 use std::net::TcpListener;
 use std::sync::mpsc;
 use std::thread;

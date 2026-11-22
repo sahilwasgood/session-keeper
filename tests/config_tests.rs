@@ -1,4 +1,4 @@
-use session_keeper_rust::config::{format_log_time, format_utc_time, Config};
+use session_keeper_rust::config::{format_utc_time, Config};
 use std::path::PathBuf;
 
 #[test]
