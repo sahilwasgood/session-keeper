@@ -963,9 +963,20 @@ fn main() {
         }
         Mode::SetSetting(key, value) => {
             let mut st = State::load();
+            if key == "timezone" || key == "date_style" {
+                if key == "timezone" { st.time_prefs.timezone = value.trim().to_lowercase(); }
+                else { st.time_prefs.date_style = value.trim().to_lowercase(); }
+                set_time_prefs(&st.time_prefs);
+                if let Err(e) = st.save() {
+                    eprintln!("Setting save failed: {}", e);
+                    std::process::exit(1);
+                }
+                print_line(&format!("{} = {}", key, value));
+                return;
+            }
             let parsed = match key.as_str() {
                 "min_gap" | "cap" | "global_cap" | "interval" | "cooldown" | "missing_cooldown" | "cap_cooldown" => value.parse::<i64>().ok(),
-                "away" | "enabled" | "dry_run" | "notify" => match value.as_str() {
+                "away" | "enabled" | "dry_run" | "notify" | "clock_24h" => match value.as_str() {
                     "1" | "true" | "on" => Some(1),
                     "0" | "false" | "off" => Some(0),
                     _ => None,
@@ -991,8 +1002,10 @@ fn main() {
                 "enabled" => st.enabled = number != 0,
                 "dry_run" => st.persist_dry_run = number != 0,
                 "notify" => st.persist_notifications = number != 0,
+                "clock_24h" => st.time_prefs.clock_24h = number != 0,
                 _ => unreachable!(),
             }
+            set_time_prefs(&st.time_prefs);
             let text = serde_json::to_string(&st).unwrap_or_default();
             let clean = State::from_json(&text).unwrap_or(st);
             if let Err(e) = clean.save() {
