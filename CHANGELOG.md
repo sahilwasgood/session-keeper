@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.2 (2026-11-22)
 
 - Global hourly cap now backed by a bounded rolling timestamp list in state, so deleting or rotating the history file cannot silently reset the cap.
 
