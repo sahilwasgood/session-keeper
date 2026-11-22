@@ -1972,3 +1972,46 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
     launch_tick(&state, &tx, &busy);
     gtk::main();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn isolated(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("sk-runtick-{}-{}", std::process::id(), tag));
+        let _ = std::fs::create_dir_all(&dir);
+        std::env::set_var("SESSION_KEEPER_DB", dir.join("no-such.db"));
+        std::env::set_var("SESSION_KEEPER_DRIVE", &dir);
+        std::env::set_var("SESSION_KEEPER_LOG", dir.join("log"));
+        std::env::set_var("SESSION_KEEPER_HISTORY", dir.join("history.jsonl"));
+        std::env::set_var("SESSION_KEEPER_STATE", dir.join("state.json"));
+        dir
+    }
+
+    #[test]
+    fn run_tick_reports_unknown_views_when_database_is_unavailable() {
+        let dir = isolated("db-down");
+        let mut st = State::default();
+        st.sessions.push(Session { id: "ses_runtick_a".to_string(), ..Default::default() });
+        let out = run_tick(st, false);
+        assert!(out.error.is_none());
+        assert!(out.summary.contains("Watchdog paused"));
+        let view = out.views.get("ses_runtick_a").expect("view for watched session");
+        assert_eq!(view.status, Status::Unknown);
+        assert_eq!(view.reason, "database_unavailable");
+        assert_eq!(view.progress_ms, 0);
+        assert_eq!(out.globals.cap_remaining, -1);
+        assert_eq!(out.globals.last_tick_ms, 0, "paused tick must not advance the heartbeat");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn reason_covers_every_status() {
+        assert_eq!(reason(&Status::Due), "idle");
+        assert_eq!(reason(&Status::Nudged), "already_nudged");
+        assert_eq!(reason(&Status::Waiting), "waiting_on_question");
+        assert_eq!(reason(&Status::Stalled), "no_new_output");
+        assert_eq!(reason(&Status::Clean), "working");
+        assert_eq!(reason(&Status::Unknown), "database_unavailable");
+    }
+}
