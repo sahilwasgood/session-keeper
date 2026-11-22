@@ -1,4 +1,4 @@
-use crate::config::Config;
+use crate::config::{Config, TimePrefs};
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::Path;
@@ -137,6 +137,8 @@ pub struct State {
     /// Rolling nudge timestamps so the global cap survives history rotation.
     #[serde(default)]
     pub recent_nudges: Vec<i64>,
+    #[serde(default)]
+    pub time_prefs: TimePrefs,
 }
 
 fn default_slow_cooldown() -> i64 { 3600 }
@@ -162,6 +164,7 @@ impl Default for State {
             missing_alert_cooldown_s: 3600,
             cap_alert_cooldown_s: 3600,
             recent_nudges: Vec::new(),
+            time_prefs: TimePrefs::default(),
         }
     }
 }

@@ -18,10 +18,10 @@ A small on-demand watchdog for OpenCode sessions. Nothing runs at boot. Open the
 
 - Session cards with status badge, reason, model, effective prompt, nudge count against the per-session cap, and time-in-state. The status line shows the remaining global cap.
 - Per-session buttons: Details, Edit prompt, Model, Kick (with 10s cooldown), Remove, Pause/Resume.
-- Filter by id or title, "Attention only" toggle, priority or name sorting.
+- Filter by id or title, a status drop-down (all, needs attention, working, due, nudged, waiting, stalled, paused, unknown), "Attention only" toggle, and priority or name sorting.
 - One-click **Pause all / Resume all** in the toolbar; it stays in sync with CLI changes to the global switch. A corrupt state file produces a startup warning and keeps a timestamped backup.
 - Settings: default prompt, min gap, per-session cap, global cap, away mode, tick interval, alert cooldown, global off switch, dry run, notifications, Pause/Resume all, export/import settings, reload from disk. "Test notification" reports whether a desktop notification was actually sent.
-- History and log panel, keyboard shortcuts: F5 check, Ctrl+F filter, Ctrl+E audit export, Ctrl+Q quit.
+- Scrolling session list and scrolling Settings, History/log, and Help panes that stay put when expanded. Keyboard shortcuts: F5 check, F11 full screen, Ctrl+F filter, Ctrl+E audit export, Ctrl+Q quit. The native window close is the only Quit control.
 
 ## CLI (no window needed)
 
@@ -45,6 +45,8 @@ session-keeper-rust                       open the GUI
 ## Configuration
 
 Defaults follow a standard OpenCode install: database `~/.local/share/opencode/opencode.db`, server `http://127.0.0.1:4096`, credentials `~/.config/opencode/service.json`, and app state under `~/.config/session-keeper/`. No setup is needed if OpenCode is installed in the usual locations.
+
+Timestamps use the device timezone by default, in 12-hour format. Same-day entries show only the time; older ones add the configured date. Timezone (auto or a fixed offset like +05:30), 12/24-hour clock, and date granularity are configurable in Settings.
 
 To override any path or the API address, put `KEY=value` lines in `~/.config/session-keeper/env` (one per line, `#` comments allowed). Real environment variables take precedence. Available keys: `SESSION_KEEPER_DB`, `SESSION_KEEPER_DRIVE`, `SESSION_KEEPER_STATE`, `SESSION_KEEPER_HISTORY`, `SESSION_KEEPER_LOG`, `SESSION_KEEPER_API`, `SESSION_KEEPER_SERVICE_JSON`, `SESSION_KEEPER_LOCK`, `SESSION_KEEPER_AUDIT`, `SESSION_KEEPER_DRY_RUN`, `SESSION_KEEPER_NOTIFY`.
 

@@ -73,6 +73,14 @@ fn json_status_has_expected_schema_and_values() {
         assert_eq!(obj["min_gap_s"].as_i64(), Some(13));
         assert_eq!(obj["session_cap_per_hour"].as_i64(), Some(4));
         assert_eq!(obj["away_mode"].as_bool(), Some(true));
+        assert!(obj["watchdog_enabled"].is_boolean());
+        assert_eq!(obj["global_cap_per_hour"].as_i64(), Some(60));
+        assert!(obj["global_cap_used"].is_number());
+        assert!(obj["global_cap_remaining"].is_number());
+        assert!(obj["next_eligible_ms"].is_number());
+        assert_eq!(obj["alert_cooldown_s"].as_i64(), Some(300));
+        assert_eq!(obj["missing_alert_cooldown_s"].as_i64(), Some(3600));
+        assert_eq!(obj["cap_alert_cooldown_s"].as_i64(), Some(3600));
     }
     assert_eq!(items[0]["id"].as_str(), Some("ses_json_a"));
     assert_eq!(items[0]["enabled"].as_bool(), Some(true));

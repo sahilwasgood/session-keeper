@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Configurable timestamp display: device-local by default (or fixed UTC offset), 12/24-hour clock, and selectable date granularity. Same-day entries show time only; older ones include the date.
+- GUI status filter drop-down (working, due, nudged, waiting, stalled, paused, unknown, needs attention).
+- Scrolling Settings, History/log, and Help panes; collapsing sections no longer hides the others. F11 toggles full screen; the redundant in-app Quit button is gone.
+- `--status --json` now includes global cap, cooldown, and next-eligible fields.
+
 ## v0.2.2 (2026-11-22)
 
 - Global hourly cap now backed by a bounded rolling timestamp list in state, so deleting or rotating the history file cannot silently reset the cap.

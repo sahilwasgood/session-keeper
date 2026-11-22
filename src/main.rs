@@ -2,7 +2,7 @@ use glib::clone;
 use gtk::prelude::*;
 use rusqlite::{Connection, OpenFlags};
 use session_keeper_rust::cli::{parse_args, Mode, HELP};
-use session_keeper_rust::config::{load_env_file, Config};
+use session_keeper_rust::config::{load_env_file, set_time_prefs, Config, TimePrefs};
 use session_keeper_rust::events::watch_events;
 use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_exists, session_model, session_title, Status};
 use session_keeper_rust::nudge::{append_history, decide, fetch_models_result, fetch_sessions_result, has_pending_human_input, log_line, notify, notify_send_available, nudges_in_last_hour_combined, send_nudge, switch_model, Decision, ModelInfo, SessionInfo};
@@ -23,6 +23,9 @@ static MODEL_TX: OnceLock<Sender<(String, Result<Vec<ModelInfo>, String>)>> = On
 static KICK_TX: OnceLock<Sender<(String, i64, Result<(), String>)>> = OnceLock::new();
 static ADD_TX: OnceLock<Sender<(String, bool)>> = OnceLock::new();
 static SESSION_TX: OnceLock<Sender<Result<Vec<SessionInfo>, String>>> = OnceLock::new();
+thread_local! {
+    static STATUS_FILTER: RefCell<String> = RefCell::new("all".to_string());
+}
 
 #[derive(Clone)]
 struct SessionView {
@@ -417,6 +420,20 @@ fn refresh(
     if attention_on {
         items.retain(|(_, v)| v.map(|x| needs_attention(&x.status)).unwrap_or(false));
     }
+    let status_style = STATUS_FILTER.with(|f| f.borrow().clone());
+    if status_style != "all" {
+        items.retain(|(s, v)| match status_style.as_str() {
+            "attention" => v.map(|x| needs_attention(&x.status)).unwrap_or(false),
+            "paused" => !s.enabled,
+            "working" => v.map(|x| x.status == Status::Clean).unwrap_or(false),
+            "due" => v.map(|x| x.status == Status::Due).unwrap_or(false),
+            "nudged" => v.map(|x| x.status == Status::Nudged).unwrap_or(false),
+            "waiting" => v.map(|x| x.status == Status::Waiting).unwrap_or(false),
+            "stalled" => v.map(|x| x.status == Status::Stalled).unwrap_or(false),
+            "unknown" => v.map(|x| x.status == Status::Unknown).unwrap_or(false),
+            _ => true,
+        });
+    }
     items.sort_by_key(|(s, v)| {
         sort_key(
             &v.map(|x| x.status).unwrap_or(Status::Unknown),
@@ -778,6 +795,7 @@ fn main() {
         preflight();
     }
     let boot_state = State::load();
+    set_time_prefs(&boot_state.time_prefs);
     if session_keeper_rust::state::state_was_corrupt() {
         let msg = "State file was corrupt: a timestamped backup was saved and defaults were loaded";
         eprintln!("session-keeper: {}", msg);
@@ -853,6 +871,17 @@ fn main() {
             let st = State::load();
             let conn = open_db();
             if opts.json {
+                let now = now_ms();
+                let cap_used = if st.global_nudge_cap > 0 {
+                    nudges_in_last_hour_combined(now, &st)
+                } else {
+                    0
+                };
+                let cap_remaining = if st.global_nudge_cap > 0 {
+                    (st.global_nudge_cap - cap_used).max(0)
+                } else {
+                    -1
+                };
                 let items: Vec<serde_json::Value> = st.sessions.iter().map(|s| {
                     let status = conn.as_ref().map(|c| classify(c, &s.id, &st)).unwrap_or(Status::Unknown);
                     let model = conn.as_ref().map(|c| session_model(c, &s.id)).unwrap_or_default();
@@ -868,6 +897,14 @@ fn main() {
                         "min_gap_s": st.min_gap,
                         "session_cap_per_hour": st.max_nudges_per_hour,
                         "away_mode": st.away_mode,
+                        "watchdog_enabled": st.enabled,
+                        "global_cap_per_hour": st.global_nudge_cap,
+                        "global_cap_used": cap_used,
+                        "global_cap_remaining": cap_remaining,
+                        "next_eligible_ms": if s.last_nudge > 0 { s.last_nudge + st.min_gap * 1000 } else { 0 },
+                        "alert_cooldown_s": st.alert_cooldown_s,
+                        "missing_alert_cooldown_s": st.missing_alert_cooldown_s,
+                        "cap_alert_cooldown_s": st.cap_alert_cooldown_s,
                     })
                 }).collect();
                 print_line(&serde_json::to_string(&items).unwrap_or_else(|_| "[]".to_string()));
@@ -1159,6 +1196,7 @@ fn main() {
     let views: Rc<RefCell<HashMap<String, SessionView>>> = Rc::new(RefCell::new(HashMap::new()));
     let filter: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
     let attention: Rc<RefCell<bool>> = Rc::new(RefCell::new(false));
+
     let busy = Rc::new(Cell::new(false));
     let timer: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
     let (tx, rx) = channel::<TickOutcome>();
@@ -1190,10 +1228,22 @@ fn main() {
     let tx_key = tx.clone();
     let busy_key = busy.clone();
     let filter_key = filter_entry.clone();
+    let win_full = Rc::new(RefCell::new(window.clone()));
+    let full_state = Rc::new(Cell::new(false));
     window.connect_key_press_event(move |_, key| {
         use gtk::gdk::keys::constants;
         if key.keyval() == constants::F5 {
             launch_tick(&st_key, &tx_key, &busy_key);
+            return glib::Propagation::Stop;
+        }
+        if key.keyval() == constants::F11 {
+            if full_state.get() {
+                win_full.borrow().unfullscreen();
+                full_state.set(false);
+            } else {
+                win_full.borrow().fullscreen();
+                full_state.set(true);
+            }
             return glib::Propagation::Stop;
         }
         let ctrl = key.state().contains(gtk::gdk::ModifierType::CONTROL_MASK);
@@ -1219,10 +1269,9 @@ fn main() {
     header.set_subtitle(Some("On-demand OpenCode watchdog"));
     header.set_show_close_button(true);
     window.set_titlebar(Some(&header));
-    let quit = icon_button("Quit", "window-close-symbolic");
-    quit.connect_clicked(|_| gtk::main_quit());
-    header.pack_end(&quit);
-
+    // The native header-bar close button is the single Quit control; closing
+    // the window is what stops the watchdog, so a second Quit button was
+    // redundant and easy to mistake for a different action.
     let outer = gtk::Box::new(gtk::Orientation::Vertical, 8);
     outer.set_border_width(12);
     window.add(&outer);
@@ -1252,6 +1301,29 @@ fn main() {
     controls.add(&filter_entry);
     let attention_cb = gtk::CheckButton::with_label("Attention only");
     controls.add(&attention_cb);
+    let status_combo = gtk::ComboBoxText::new();
+    for (id, label) in [
+        ("all", "All statuses"),
+        ("attention", "Needs attention"),
+        ("working", "Working"),
+        ("due", "Due"),
+        ("nudged", "Nudged"),
+        ("waiting", "Waiting on question"),
+        ("stalled", "Stalled"),
+        ("unknown", "Unknown / DB down"),
+        ("paused", "Paused sessions"),
+    ] {
+        status_combo.append(Some(id), label);
+    }
+    status_combo.set_active_id(Some("all"));
+    STATUS_FILTER.with(|f| *f.borrow_mut() = "all".to_string());
+    status_combo.connect_changed(move |combo| {
+        let value = combo.active_id().map(|s| s.to_string()).unwrap_or_else(|| "all".to_string());
+        STATUS_FILTER.with(|f| *f.borrow_mut() = value);
+        // The periodic tick outcome calls refresh, so the new filter applies
+        // within one tick without reaching widgets declared further down.
+    });
+    controls.add(&status_combo);
 
     let pause_toggle = gtk::ToggleButton::with_label(if state.borrow().enabled { "Pause all" } else { "Resume all" });
     pause_toggle.style_context().add_class("destructive-action");
@@ -1323,6 +1395,7 @@ fn main() {
     let scroll = gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
     scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
     scroll.set_vexpand(true);
+    scroll.set_min_content_height(220);
     scroll.add(&list);
     outer.add(&scroll);
 
@@ -1442,6 +1515,34 @@ fn main() {
     settings_box.add(&test_notify);
     settings_box.add(&notify_result);
 
+    let time_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    time_row.add(&gtk::Label::new(Some("Timezone (auto or +05:30):")));
+    let tz_entry = gtk::Entry::new();
+    tz_entry.set_text(&state.borrow().time_prefs.timezone);
+    tz_entry.set_width_chars(12);
+    time_row.add(&tz_entry);
+    let clock24_cb = gtk::CheckButton::with_label("24-hour clock");
+    clock24_cb.set_active(state.borrow().time_prefs.clock_24h);
+    time_row.add(&clock24_cb);
+    time_row.add(&gtk::Label::new(Some("Date in timestamps:")));
+    let date_style = gtk::ComboBoxText::new();
+    for (id, label) in [
+        ("auto", "Same day: time only, older: date and time"),
+        ("none", "Never show date"),
+        ("day", "Day only"),
+        ("month_day", "Month and day"),
+        ("day_month", "Day and month"),
+        ("day_month_year", "Day, month and year"),
+        ("month_day_year", "Month, day and year"),
+        ("year_month_day", "Year, month and day"),
+        ("year", "Year only"),
+    ] {
+        date_style.append(Some(id), label);
+    }
+    date_style.set_active_id(Some(&state.borrow().time_prefs.date_style));
+    time_row.add(&date_style);
+    settings_box.add(&time_row);
+
     let save_settings = icon_button("Save settings", "document-save-symbolic");
     save_settings.style_context().add_class("suggested-action");
     let st_settings = state.clone();
@@ -1450,6 +1551,9 @@ fn main() {
     let timer_settings = timer.clone();
     let missing_cooldown_settings = missing_cooldown_spin.clone();
     let cap_cooldown_settings = cap_cooldown_spin.clone();
+    let tz_settings = tz_entry.clone();
+    let clock24_settings = clock24_cb.clone();
+    let date_style_settings = date_style.clone();
     save_settings.connect_clicked(move |_| {
         let p = def_prompt.text().trim().to_string();
         let default_prompt = if p.is_empty() { "continue, dont stop".to_string() } else { p };
@@ -1470,6 +1574,13 @@ fn main() {
             st.missing_alert_cooldown_s = missing_cooldown_settings.value() as i64;
             st.cap_alert_cooldown_s = cap_cooldown_settings.value() as i64;
             st.tick_interval_s = interval_spin.value() as i64;
+            st.time_prefs = TimePrefs {
+                timezone: tz_settings.text().trim().to_lowercase(),
+                clock_24h: clock24_settings.is_active(),
+                date_style: date_style_settings.active_id()
+                    .map(|s| s.to_string()).unwrap_or_else(|| "auto".to_string()),
+            };
+            set_time_prefs(&st.time_prefs);
             let _ = st.save();
         }
         std::env::set_var("SESSION_KEEPER_DRY_RUN", if dry { "1" } else { "0" });
@@ -1559,7 +1670,13 @@ fn main() {
     });
     io_row.add(&reload_btn);
     settings_box.add(&io_row);
-    settings.add(&settings_box);
+    let settings_scroll = gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
+    settings_scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
+    settings_scroll.set_max_content_height(260);
+    settings_scroll.set_propagate_natural_height(true);
+    settings_scroll.add(&settings_box);
+    settings.add(&settings_scroll);
+    settings.set_vexpand(false);
     outer.add(&settings);
 
     // History and log viewers from the old dashboard.
@@ -1587,20 +1704,32 @@ fn main() {
     log_label.set_line_wrap(true);
     diag_box.add(&gtk::Label::new(Some("Keeper log:")));
     diag_box.add(&log_label);
-    diagnostics.add(&diag_box);
+    let diag_scroll = gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
+    diag_scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
+    diag_scroll.set_max_content_height(240);
+    diag_scroll.set_propagate_natural_height(true);
+    diag_scroll.add(&diag_box);
+    diagnostics.add(&diag_scroll);
+    diagnostics.set_vexpand(false);
     outer.add(&diagnostics);
 
     let help = gtk::Expander::new(Some("Help: shortcuts and terminal commands"));
     let help_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
     let help_text = gtk::Label::new(Some(
-        "Shortcuts: F5 check now, Ctrl+F focus filter, Ctrl+E export audit, Ctrl+Q quit.\
+        "Shortcuts: F5 check now, F11 full screen, Ctrl+F focus filter, Ctrl+E export audit, Ctrl+Q quit. Use the status drop-down to filter by working, due, nudged, waiting, stalled, paused or unknown.\
 Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set-model, --pause/--resume <sid>, --set-prompt <sid> <text>, --set-setting <key> <value>, --export-state/--import-state <path>, --export-audit, --dry-run, --help.",
     ));
     help_text.set_xalign(0.0);
     help_text.set_line_wrap(true);
     help_text.style_context().add_class("session-meta");
     help_box.add(&help_text);
-    help.add(&help_box);
+    let help_scroll = gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
+    help_scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
+    help_scroll.set_max_content_height(180);
+    help_scroll.set_propagate_natural_height(true);
+    help_scroll.add(&help_box);
+    help.add(&help_scroll);
+    help.set_vexpand(false);
     outer.add(&help);
 
     // Apply worker results on the UI thread.
@@ -1908,6 +2037,7 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
                 arm_timer(&st_watch, &tx_watch, &busy_watch, &timer_watch);
             }
             pause_watch.set_label(if disk.enabled { "Pause all" } else { "Resume all" });
+            set_time_prefs(&disk.time_prefs);
             // A settings change made by CLI or another process must reach the
             // watchdog workers, not just the GUI's in-memory state.
             std::env::set_var(

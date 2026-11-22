@@ -102,6 +102,12 @@ fn local_hms(epoch: i64) -> String {
 
 #[test]
 fn log_time_uses_machine_local_timezone() {
+    // Pin display settings so only the timezone behavior is under test.
+    session_keeper_rust::config::set_time_prefs(&session_keeper_rust::config::TimePrefs {
+        timezone: "auto".to_string(),
+        clock_24h: true,
+        date_style: "none".to_string(),
+    });
     for epoch in [0i64, 1_795_248_597, 1_700_000_000, -1] {
         assert_eq!(format_log_time(epoch), local_hms(epoch));
     }
