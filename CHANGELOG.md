@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Status filter changes now redraw the session list immediately instead of waiting for the next watchdog tick (up to 30 seconds).
+
+## Unreleased
+
 - Codebase formatted with rustfmt; production code is Clippy-clean. CI now gates both formatting and production lint.
 
 ## v0.3.0 (2026-11-22)

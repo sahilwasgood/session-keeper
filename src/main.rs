@@ -34,6 +34,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 type ModelResult = Result<Vec<ModelInfo>, String>;
 type SessionResult = Result<Vec<SessionInfo>, String>;
 type KickResult = Result<(), String>;
+type RefreshCallback = Rc<RefCell<Option<Box<dyn Fn()>>>>;
 
 static MODEL_TX: OnceLock<Sender<(String, ModelResult)>> = OnceLock::new();
 static KICK_TX: OnceLock<Sender<(String, i64, KickResult)>> = OnceLock::new();
@@ -1630,6 +1631,9 @@ fn main() {
     controls.add(&filter_entry);
     let attention_cb = gtk::CheckButton::with_label("Attention only");
     controls.add(&attention_cb);
+    // Set once the list widgets exist, so changing the filter redraws
+    // immediately instead of waiting for the next 30-second watchdog tick.
+    let refresh_cb: RefreshCallback = Rc::new(RefCell::new(None));
     let status_combo = gtk::ComboBoxText::new();
     for (id, label) in [
         ("all", "All statuses"),
@@ -1646,14 +1650,16 @@ fn main() {
     }
     status_combo.set_active_id(Some("all"));
     STATUS_FILTER.with(|f| *f.borrow_mut() = "all".to_string());
+    let cb_handle = refresh_cb.clone();
     status_combo.connect_changed(move |combo| {
         let value = combo
             .active_id()
             .map(|s| s.to_string())
             .unwrap_or_else(|| "all".to_string());
         STATUS_FILTER.with(|f| *f.borrow_mut() = value);
-        // The periodic tick outcome calls refresh, so the new filter applies
-        // within one tick without reaching widgets declared further down.
+        if let Some(cb) = cb_handle.borrow().as_ref() {
+            cb();
+        }
     });
     controls.add(&status_combo);
 
@@ -1741,6 +1747,15 @@ fn main() {
     scroll.set_min_content_height(220);
     scroll.add(&list);
     outer.add(&scroll);
+
+    let cb_state = state.clone();
+    let cb_list = list.clone();
+    let cb_views = views.clone();
+    let cb_filter = filter.clone();
+    let cb_attention = attention.clone();
+    *refresh_cb.borrow_mut() = Some(Box::new(move || {
+        refresh(&cb_state, &cb_list, &cb_views, &cb_filter, &cb_attention);
+    }));
 
     let attention_toggle = attention.clone();
     let st_att = state.clone();
