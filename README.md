@@ -77,10 +77,6 @@ install -m 755 target/release/session-keeper-rust ~/.local/bin/session-keeper-ru
 
 CI runs the full test suite and a release build on every push and pull request.
 
-## Project notes
-
-The `AUTONOMOUS/` directory holds development-time task boards, research, and handoff notes. It is not required to build or run the application.
-
 ## License
 
 MIT. See [LICENSE](LICENSE).

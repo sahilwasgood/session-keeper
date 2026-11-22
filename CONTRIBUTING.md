@@ -24,5 +24,3 @@ The GUI is GTK3 and runs on the main thread. Long-running work (SQLite reads, AP
 ## Reporting issues
 
 Include the Session Keeper version (`--version`), your OpenCode and GTK3 versions, and the relevant lines from `~/session-keeper.log`. Do not paste credentials from `service.json`.
-
-See `AUTONOMOUS/` for the original design notes, task boards, and research that shaped the project.
