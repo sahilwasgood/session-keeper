@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.1 (2026-11-22)
+
+- `--status` and `--status --json` now report `unknown` / `database_unavailable` during a database outage, matching the GUI. Added regression coverage.
+
 ## v0.2.0 (2026-11-22)
 
 - Local wall-clock timestamps in logs and status (previously UTC).
