@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.3.0 (2026-11-22)
 
 - Configurable timestamp display: device-local by default (or fixed UTC offset), 12/24-hour clock, and selectable date granularity. Same-day entries show time only; older ones include the date.
 - CLI parity for timestamp preferences (`--set-setting timezone|clock_24h|date_style`).
