@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Toolbar Pause all and the Settings "Watching enabled" checkbox now stay in sync in both directions and across external CLI edits, so saving settings can no longer silently undo a pause.
+
+## Unreleased
+
 - Save settings now redraws the session list immediately, so prompt and sort changes appear without waiting for the next tick.
 
 ## Unreleased

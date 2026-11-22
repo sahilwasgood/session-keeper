@@ -35,6 +35,7 @@ type ModelResult = Result<Vec<ModelInfo>, String>;
 type SessionResult = Result<Vec<SessionInfo>, String>;
 type KickResult = Result<(), String>;
 type RefreshCallback = Rc<RefCell<Option<Box<dyn Fn()>>>>;
+type EnabledCallback = Rc<RefCell<Option<Box<dyn Fn(bool)>>>>;
 
 static MODEL_TX: OnceLock<Sender<(String, ModelResult)>> = OnceLock::new();
 static KICK_TX: OnceLock<Sender<(String, i64, KickResult)>> = OnceLock::new();
@@ -1671,6 +1672,8 @@ fn main() {
     pause_toggle.style_context().add_class("destructive-action");
     let st_pause = state.clone();
     let summary_pause = summary.clone();
+    let enabled_notify: EnabledCallback = Rc::new(RefCell::new(None));
+    let enabled_notify_toggle = enabled_notify.clone();
     pause_toggle.connect_toggled(move |b| {
         let enabled = !b.is_active();
         st_pause.borrow_mut().enabled = enabled;
@@ -1681,6 +1684,9 @@ fn main() {
         } else {
             "All automatic nudges paused"
         });
+        if let Some(cb) = enabled_notify_toggle.borrow().as_ref() {
+            cb(enabled);
+        }
     });
     controls.add(&pause_toggle);
 
@@ -1922,6 +1928,17 @@ fn main() {
 
     let enabled_cb = gtk::CheckButton::with_label("Watching enabled (global off switch)");
     enabled_cb.set_active(state.borrow().enabled);
+    let enabled_watch = enabled_cb.clone();
+    let enabled_cb_notify = enabled_cb.clone();
+    *enabled_notify.borrow_mut() = Some(Box::new(move |enabled: bool| {
+        enabled_cb_notify.set_active(enabled);
+    }));
+    let pause_from_settings = pause_toggle.clone();
+    enabled_cb.connect_toggled(move |b| {
+        let enabled = b.is_active();
+        pause_from_settings.set_active(!enabled);
+        pause_from_settings.set_label(if enabled { "Pause all" } else { "Resume all" });
+    });
     settings_box.add(&enabled_cb);
     let dry_cb = gtk::CheckButton::with_label("Dry run: preview decisions, send no nudges");
     dry_cb.set_active(Config::dry_run());
@@ -2573,6 +2590,8 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
             } else {
                 "Resume all"
             });
+            pause_watch.set_active(!disk.enabled);
+            enabled_watch.set_active(disk.enabled);
             set_time_prefs(&disk.time_prefs);
             // A settings change made by CLI or another process must reach the
             // watchdog workers, not just the GUI's in-memory state.
