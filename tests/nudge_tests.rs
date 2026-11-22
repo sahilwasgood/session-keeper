@@ -67,3 +67,14 @@ fn notify_send_availability_is_cached_and_notify_does_not_panic() {
     // Dispatch is best-effort: must never panic whether or not the transport exists.
     let _ = session_keeper_rust::nudge::notify("Session Keeper", "test");
 }
+
+#[test]
+fn combined_global_count_survives_missing_history() {
+    let mut st = State::default();
+    let now = 20_000_000i64;
+    st.recent_nudges.push(now - 1000);
+    st.recent_nudges.push(now - 2000);
+    st.recent_nudges.push(now - 4_000_000);
+    let count = session_keeper_rust::nudge::nudges_in_last_hour_combined(now, &st);
+    assert!(count >= 2, "in-state nudges must count when history is gone: {}", count);
+}

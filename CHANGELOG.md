@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Global hourly cap now backed by a bounded rolling timestamp list in state, so deleting or rotating the history file cannot silently reset the cap.
+
 ## v0.2.1 (2026-11-22)
 
 - `--status` and `--status --json` now report `unknown` / `database_unavailable` during a database outage, matching the GUI. Added regression coverage.

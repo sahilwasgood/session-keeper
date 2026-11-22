@@ -70,6 +70,16 @@ pub fn nudges_in_last_hour_all(now_ms: i64) -> i64 {
         .count() as i64
 }
 
+/// Global hourly usage with a persisted fallback. Taking the larger of the
+/// history count and the in-state rolling list means rotating or deleting the
+/// history file cannot silently reset the cap, while older installs with an
+/// empty list keep using history as before.
+pub fn nudges_in_last_hour_combined(now_ms: i64, state: &State) -> i64 {
+    let cutoff = now_ms - 3_600_000;
+    let from_state = state.recent_nudges.iter().filter(|t| **t >= cutoff).count() as i64;
+    nudges_in_last_hour_all(now_ms).max(from_state)
+}
+
 static NOTIFY_OK: OnceLock<bool> = OnceLock::new();
 static NOTIFY_WARNED: OnceLock<()> = OnceLock::new();
 

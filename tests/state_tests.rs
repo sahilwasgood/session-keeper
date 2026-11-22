@@ -127,3 +127,17 @@ fn slow_alert_cooldowns_default_and_normalize() {
     assert_eq!(normalized.missing_alert_cooldown_s, 0);
     assert_eq!(normalized.cap_alert_cooldown_s, 99);
 }
+
+#[test]
+fn record_nudge_keeps_only_recent_hour() {
+    let mut st = State::default();
+    let now = 10_000_000i64;
+    st.record_nudge(now - 3_600_001);
+    st.record_nudge(now - 10);
+    st.record_nudge(now);
+    assert_eq!(st.recent_nudges.len(), 2);
+    st.record_nudge(now);
+    assert_eq!(st.recent_nudges.len(), 3);
+    for _ in 0..600 { st.record_nudge(now); }
+    assert!(st.recent_nudges.len() <= 500, "rolling list must stay bounded");
+}

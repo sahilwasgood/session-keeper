@@ -98,3 +98,5 @@ R-015: configurable missing/cap cooldowns. Verified CLI --set-setting writes sta
 R-001 completed: added Status::Unknown, used when run_tick cannot open the DB; cards show "unknown" / "database_unavailable" and "last progress none" instead of "missing"/"working". Verified via isolated missing-DB screenshot and AT-SPI; contrast test includes the new gray badge.
 
 R-016: added in-process unit tests in main.rs covering run_tick DB-outage behavior (Unknown views, database_unavailable reason, preserved heartbeat) and exhaustive reason() mapping. Total: 31 test binaries (2 unit + 29 integration) green.
+
+R-011: added State.record_nudge (rolling last hour, capped at 500) and nudges_in_last_hour_combined (max of history and state counts). All three nudge paths now record a timestamp. Unit tests cover hour trimming, bounded length, and counting without history. 31 binaries green.

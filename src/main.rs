@@ -5,7 +5,7 @@ use session_keeper_rust::cli::{parse_args, Mode, HELP};
 use session_keeper_rust::config::{load_env_file, Config};
 use session_keeper_rust::events::watch_events;
 use session_keeper_rust::db::{classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_exists, session_model, session_title, Status};
-use session_keeper_rust::nudge::{append_history, decide, fetch_models_result, fetch_sessions_result, has_pending_human_input, log_line, notify, notify_send_available, nudges_in_last_hour_all, send_nudge, switch_model, Decision, ModelInfo, SessionInfo};
+use session_keeper_rust::nudge::{append_history, decide, fetch_models_result, fetch_sessions_result, has_pending_human_input, log_line, notify, notify_send_available, nudges_in_last_hour_combined, send_nudge, switch_model, Decision, ModelInfo, SessionInfo};
 use session_keeper_rust::process::create_lock;
 use session_keeper_rust::state::{apply_tick_fields, states_differ, GlobalTickFields, Session, State, TickFields};
 use session_keeper_rust::safety::{fingerprint, is_repeating_output, should_nudge_after_debounce};
@@ -100,7 +100,11 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
     };
     let sessions: Vec<Session> = state.borrow().sessions.clone();
     let global_cap = state.borrow().global_nudge_cap;
-    let mut used_global = if global_cap > 0 { nudges_in_last_hour_all(now) } else { 0 };
+    let mut used_global = if global_cap > 0 {
+        nudges_in_last_hour_combined(now, &state.borrow())
+    } else {
+        0
+    };
     let mut nudged = 0;
     let mut held = 0;
 
@@ -244,6 +248,7 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
                         x.prev_hash = x.last_hash.take();
                         x.last_hash = Some(fp);
                     }
+                    st.record_nudge(now);
                 }
                 append_history(&s.id, "nudge", &prompt);
                 notify("Session Keeper", &format!("Nudged {}", if title.is_empty() { &s.id } else { &title }));
@@ -1069,6 +1074,7 @@ fn main() {
                         x.idle_streak = 0;
                         x.last_action = format!("kicked {}", session_keeper_rust::config::format_log_time(now / 1000));
                     }
+                    st.record_nudge(now);
                     let _ = st.save();
                     append_history(&sid, "nudge", prompt);
                     log_line(&format!("{}: kicked from CLI", sid));
@@ -1868,6 +1874,7 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
                             x.idle_streak = 0;
                             x.last_action = format!("kicked {}", session_keeper_rust::config::format_log_time(now / 1000));
                         }
+                        st.record_nudge(now);
                         let _ = st.save();
                         drop(st);
                         summary_kick.set_label(&format!("Kicked {}", short_id(&sid)));

@@ -264,7 +264,7 @@ IDs are stable references for other sessions to pick up. Owner is a *suggestion*
 | R-008 | DONE: cached notify-send probe, one-time warning on missing transport, bool return, dedicated GUI feedback label | P1 | S6 | `nudge.rs:51-61` |
 | R-009 | DONE: corrupt reset warns on stderr/log/desktop; save failures logged once centrally from State::save() | P1 | S7 | `state.rs:107-138` |
 | R-010 | DONE: prev_hash tracks two prior outputs, catches A->B->A alongside A->A | P1 | S8/S6 | `safety.rs:4-8`; `main.rs:167-179` |
-| R-011 | Persist nudge counters in state (or protect history) so caps survive history rotation/deletion | P1 | S7 | `nudge.rs:28-49` |
+| R-011 | DONE: State.recent_nudges rolling 500-entry list; combined count takes max with history | P1 | S7 | `nudge.rs:28-49` |
 | R-012 | DONE: catch_unwind in launch_tick surfaces worker panic in summary and resets busy; disconnect path also resets busy | P1 | S6 | `main.rs:294-309,1326-1327` |
 | R-013 | Clarify plain-language hold reasons in UI; expose remaining cap budget | P1 | S5/S4 | `main.rs:68-76,160-163` |
 | R-014 | GUI import validation parity with CLI + backup before overwrite + configurable export path | P1 | S5 | `main.rs:1207-1242` |

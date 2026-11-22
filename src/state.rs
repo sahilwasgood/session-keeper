@@ -134,6 +134,9 @@ pub struct State {
     pub missing_alert_cooldown_s: i64,
     #[serde(default = "default_slow_cooldown")]
     pub cap_alert_cooldown_s: i64,
+    /// Rolling nudge timestamps so the global cap survives history rotation.
+    #[serde(default)]
+    pub recent_nudges: Vec<i64>,
 }
 
 fn default_slow_cooldown() -> i64 { 3600 }
@@ -158,6 +161,7 @@ impl Default for State {
             alert_cooldown_s: 300,
             missing_alert_cooldown_s: 3600,
             cap_alert_cooldown_s: 3600,
+            recent_nudges: Vec::new(),
         }
     }
 }
@@ -208,6 +212,12 @@ impl State {
         s.alert_cooldown_s = s.alert_cooldown_s.max(0);
         s.missing_alert_cooldown_s = s.missing_alert_cooldown_s.max(0);
         s.cap_alert_cooldown_s = s.cap_alert_cooldown_s.max(0);
+        s.recent_nudges.retain(|t| *t >= 0);
+        s.recent_nudges.sort_unstable();
+        if s.recent_nudges.len() > 500 {
+            let n = s.recent_nudges.len() - 500;
+            s.recent_nudges.drain(..n);
+        }
         s.last_tick_ms = s.last_tick_ms.max(0);
         s.cap_alert_ms = s.cap_alert_ms.max(0);
         s.missing_alert_ms = s.missing_alert_ms.max(0);
@@ -245,6 +255,17 @@ impl State {
         let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
         std::fs::write(&tmp, json)?;
         std::fs::rename(&tmp, path)
+    }
+
+    /// Record a nudge for the rolling hourly budget kept in state.
+    pub fn record_nudge(&mut self, now_ms: i64) {
+        self.recent_nudges.push(now_ms);
+        let cutoff = now_ms - 3_600_000;
+        self.recent_nudges.retain(|t| *t >= cutoff);
+        if self.recent_nudges.len() > 500 {
+            let n = self.recent_nudges.len() - 500;
+            self.recent_nudges.drain(..n);
+        }
     }
 }
 
