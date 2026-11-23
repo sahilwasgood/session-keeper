@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
+## v0.4.1 (2026-11-24)
 
 - `--doctor` now reports the detected OpenCode storage layout (legacy content array vs v2.4 `session_part` rows).
+- Package version aligned with GitHub releases, so `--version` now reports 0.4.1.
 
 ## v0.4.0 (2026-11-24)
 
