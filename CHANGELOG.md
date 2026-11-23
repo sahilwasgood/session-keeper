@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.4.0 (2026-11-24)
 
 - Redesigned UI: tinted badges with shape glyphs, urgency accent on card edges, quiet secondary actions with one emphasized Kick button, hairline depth, calmer type scale, focus rings, thin scrollbars, tooltips and preserved list scroll position.
 - OpenCode 2.4 compatibility: assistant text is read from `session_part` rows when the legacy `content` array is empty, so question and loop guards keep working. Default paths now cover both `opencode` and `opencode2` install names.
@@ -12,19 +12,19 @@
 - Toolbar Pause all and the Settings pause checkbox stay synchronized.
 - CI gates rustfmt and Clippy for production code.
 
-## Unreleased
+## v0.4.0 (2026-11-24)
 
 - Toolbar Pause all and the Settings "Watching enabled" checkbox now stay in sync in both directions and across external CLI edits, so saving settings can no longer silently undo a pause.
 
-## Unreleased
+## v0.4.0 (2026-11-24)
 
 - Save settings now redraws the session list immediately, so prompt and sort changes appear without waiting for the next tick.
 
-## Unreleased
+## v0.4.0 (2026-11-24)
 
 - Status filter changes now redraw the session list immediately instead of waiting for the next watchdog tick (up to 30 seconds).
 
-## Unreleased
+## v0.4.0 (2026-11-24)
 
 - Codebase formatted with rustfmt; production code is Clippy-clean. CI now gates both formatting and production lint.
 
