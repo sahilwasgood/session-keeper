@@ -174,3 +174,17 @@ fn empty_permission_means_no_human_input() {
         &api, "pw", "ses_x"
     ));
 }
+
+#[test]
+fn http_status_errors_use_consistent_prefix() {
+    let (api, _rx) = scripted(vec![reply("404 Not Found")]);
+    let err = send_nudge_with_timeout(
+        &api,
+        "pw",
+        "ses_missing",
+        "continue",
+        Duration::from_secs(2),
+    )
+    .unwrap_err();
+    assert!(err.starts_with("HTTP 404"), "unexpected error: {}", err);
+}

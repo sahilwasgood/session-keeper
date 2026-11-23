@@ -265,7 +265,10 @@ pub fn send_nudge_with_timeout(
         .set("Authorization", &auth)
         .set("Content-Type", "application/json")
         .send_string(&body)
-        .map_err(|e| format!("{}", e))?;
+        .map_err(|e| match e {
+            ureq::Error::Status(code, _) => format!("HTTP {}", code),
+            other => format!("{}", other),
+        })?;
     if !(200..300).contains(&resp.status()) {
         return Err(format!("HTTP {}", resp.status()));
     }
