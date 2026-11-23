@@ -182,3 +182,27 @@ fn assistant_text_prefers_legacy_content_when_present() {
         "legacy answer"
     );
 }
+
+#[test]
+fn storage_mode_distinguishes_legacy_and_part_layouts() {
+    let legacy = Connection::open_in_memory().unwrap();
+    legacy
+        .execute_batch("CREATE TABLE session_message (id TEXT);")
+        .unwrap();
+    assert_eq!(
+        session_keeper::db::storage_mode(&legacy),
+        "legacy (message content array)"
+    );
+
+    let modern = Connection::open_in_memory().unwrap();
+    modern
+        .execute_batch(
+            "CREATE TABLE session_part (type TEXT, data TEXT);
+         INSERT INTO session_part VALUES ('text', '{\"type\":\"text\",\"text\":\"hi\"}');",
+        )
+        .unwrap();
+    assert_eq!(
+        session_keeper::db::storage_mode(&modern),
+        "v2.4+ (session_part text rows)"
+    );
+}

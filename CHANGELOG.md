@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `--doctor` now reports the detected OpenCode storage layout (legacy content array vs v2.4 `session_part` rows).
+
 ## v0.4.0 (2026-11-24)
 
 - Redesigned UI: tinted badges with shape glyphs, urgency accent on card edges, quiet secondary actions with one emphasized Kick button, hairline depth, calmer type scale, focus rings, thin scrollbars, tooltips and preserved list scroll position.

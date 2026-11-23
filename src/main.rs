@@ -1229,6 +1229,12 @@ fn main() {
                     "MISSING notify-send"
                 }
             ));
+            print_line(&format!(
+                "storage: {}",
+                open_db()
+                    .map(|conn| session_keeper::db::storage_mode(&conn).to_string())
+                    .unwrap_or_else(|| "unavailable".to_string())
+            ));
             print_line(&format!("api: {}", Config::api_base()));
             match fetch_sessions_result(&Config::api_base(), &Config::password()) {
                 Ok(sessions) => print_line(&format!(

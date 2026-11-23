@@ -145,6 +145,36 @@ pub fn last_idle_ts(conn: &Connection, sid: &str) -> i64 {
     .unwrap_or(0)
 }
 
+/// Which assistant-text layout the live database uses.
+pub fn storage_mode(conn: &Connection) -> &'static str {
+    let has_part = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_part'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()
+        .unwrap_or(None)
+        .is_some();
+    if !has_part {
+        return "legacy (message content array)";
+    }
+    let has_text = conn
+        .query_row(
+            "SELECT 1 FROM session_part WHERE type='text' LIMIT 1",
+            [],
+            |_| Ok(()),
+        )
+        .optional()
+        .unwrap_or(None)
+        .is_some();
+    if has_text {
+        "v2.4+ (session_part text rows)"
+    } else {
+        "v2.4 schema, no part rows yet"
+    }
+}
+
 /// True when an assistant message is waiting on the operator's answer.
 /// Assistant text often carries a trailing newline, so trim before checking.
 pub fn is_question(text: &str) -> bool {
