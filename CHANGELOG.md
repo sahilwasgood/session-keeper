@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `--set-setting timezone|date_style` validates input and rejects invalid values instead of silently rendering UTC.
+
 ## v0.4.2 (2026-11-24)
 
 - README screenshot refreshed from the redesigned UI using sanitized demo data.

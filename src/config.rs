@@ -39,6 +39,47 @@ fn prefs() -> &'static RwLock<TimePrefs> {
     TIME_PREFS.get_or_init(|| RwLock::new(TimePrefs::default()))
 }
 
+/// Validate a configured timezone string before it is saved. Invalid values
+/// would silently render as UTC, which is worse than rejecting them.
+pub fn is_valid_timezone(value: &str) -> bool {
+    let v = value.trim().to_ascii_lowercase();
+    if matches!(v.as_str(), "auto" | "local" | "utc" | "z") {
+        return true;
+    }
+    let rest = match v.strip_prefix('+').or_else(|| v.strip_prefix('-')) {
+        Some(rest) => rest,
+        None => return false,
+    };
+    let (h, m) = match rest.split_once(':') {
+        Some(pair) => pair,
+        None => return false,
+    };
+    if h.len() != 1 && h.len() != 2 {
+        return false;
+    }
+    let hours: i32 = match h.parse() {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    let mins: i32 = match m.parse() {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    (0..=23).contains(&hours) && (0..=59).contains(&mins)
+}
+
+pub const DATE_STYLES: &[&str] = &[
+    "auto",
+    "none",
+    "day",
+    "month_day",
+    "day_month",
+    "day_month_year",
+    "month_day_year",
+    "year_month_day",
+    "year",
+];
+
 pub fn set_time_prefs(value: &TimePrefs) {
     if let Ok(mut guard) = prefs().write() {
         *guard = value.clone();

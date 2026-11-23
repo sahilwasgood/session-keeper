@@ -126,3 +126,18 @@ fn doctor_reports_both_default_layouts() {
     assert!(text.contains("credentials:"));
     std::fs::remove_dir_all(&d).ok();
 }
+
+#[test]
+fn timezone_and_date_style_validation() {
+    use session_keeper::config::{is_valid_timezone, DATE_STYLES};
+    assert!(is_valid_timezone("auto"));
+    assert!(is_valid_timezone("+05:30"));
+    assert!(is_valid_timezone("-04:00"));
+    assert!(is_valid_timezone("+5:30"));
+    assert!(!is_valid_timezone("IST"));
+    assert!(!is_valid_timezone("+25:00"));
+    assert!(!is_valid_timezone("+05:99"));
+    assert!(!is_valid_timezone("0530"));
+    assert!(DATE_STYLES.contains(&"day_month"));
+    assert!(!DATE_STYLES.contains(&"nonsense"));
+}

@@ -1273,10 +1273,28 @@ fn main() {
         Mode::SetSetting(key, value) => {
             let mut st = State::load();
             if key == "timezone" || key == "date_style" {
-                if key == "timezone" {
-                    st.time_prefs.timezone = value.trim().to_lowercase();
+                let normalized = value.trim().to_lowercase();
+                let valid = if key == "timezone" {
+                    session_keeper::config::is_valid_timezone(&normalized)
                 } else {
-                    st.time_prefs.date_style = value.trim().to_lowercase();
+                    session_keeper::config::DATE_STYLES.contains(&normalized.as_str())
+                };
+                if !valid {
+                    eprintln!("Invalid {} setting: {}", key, value);
+                    if key == "timezone" {
+                        eprintln!("Use auto, or a fixed offset such as +05:30");
+                    } else {
+                        eprintln!(
+                            "Use one of: {}",
+                            session_keeper::config::DATE_STYLES.join(", ")
+                        );
+                    }
+                    std::process::exit(1);
+                }
+                if key == "timezone" {
+                    st.time_prefs.timezone = normalized;
+                } else {
+                    st.time_prefs.date_style = normalized;
                 }
                 set_time_prefs(&st.time_prefs);
                 if let Err(e) = st.save() {
