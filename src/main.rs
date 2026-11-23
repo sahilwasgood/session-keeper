@@ -2066,7 +2066,11 @@ fn main() {
     time_row.add(&date_style);
     settings_box.add(&time_row);
 
+    let settings_result = gtk::Label::new(Some(""));
+    settings_result.style_context().add_class("note");
+    settings_result.set_xalign(0.0);
     let save_settings = icon_button("Save settings", "document-save-symbolic");
+    let result_for_save = settings_result.clone();
     let cb_saver = refresh_cb.clone();
     save_settings.style_context().add_class("suggested-action");
     let st_settings = state.clone();
@@ -2079,6 +2083,12 @@ fn main() {
     let clock24_settings = clock24_cb.clone();
     let date_style_settings = date_style.clone();
     save_settings.connect_clicked(move |_| {
+        let timezone = tz_settings.text().trim().to_lowercase();
+        if !session_keeper::config::is_valid_timezone(&timezone) {
+            result_for_save.set_label("Invalid timezone. Use auto, or +05:30.");
+            tz_settings.grab_focus();
+            return;
+        }
         let p = def_prompt.text().trim().to_string();
         let default_prompt = if p.is_empty() {
             "continue, dont stop".to_string()
@@ -2103,7 +2113,7 @@ fn main() {
             st.cap_alert_cooldown_s = cap_cooldown_settings.value() as i64;
             st.tick_interval_s = interval_spin.value() as i64;
             st.time_prefs = TimePrefs {
-                timezone: tz_settings.text().trim().to_lowercase(),
+                timezone,
                 clock_24h: clock24_settings.is_active(),
                 date_style: date_style_settings
                     .active_id()
@@ -2119,8 +2129,10 @@ fn main() {
         if let Some(cb) = cb_saver.borrow().as_ref() {
             cb();
         }
+        result_for_save.set_label("Settings saved");
     });
     settings_box.add(&save_settings);
+    settings_box.add(&settings_result);
 
     let bulk_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let pause_all = icon_button("Pause all", "media-playback-pause-symbolic");

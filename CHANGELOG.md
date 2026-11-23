@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- GUI Save settings now validates the timezone entry and shows inline feedback, matching CLI validation.
+
+## Unreleased
+
 - `--set-setting timezone|date_style` validates input and rejects invalid values instead of silently rendering UTC.
 
 ## v0.4.2 (2026-11-24)
