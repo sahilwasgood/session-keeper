@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.3 (2026-11-24)
+
+- Timezone and date-style settings are validated in both CLI and GUI, with inline feedback instead of silently falling back to UTC.
+
 ## Unreleased
 
 - GUI Save settings now validates the timezone entry and shows inline feedback, matching CLI validation.
