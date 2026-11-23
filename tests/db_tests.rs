@@ -131,3 +131,54 @@ fn no_idle_event_is_clean() {
         Status::Clean
     );
 }
+
+#[test]
+fn assistant_text_falls_back_to_v24_part_rows() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE session_message (
+           id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER,
+           time_created INTEGER, time_updated INTEGER, data TEXT);
+         CREATE TABLE session_part (
+           message_id TEXT, session_id TEXT, ordinal INTEGER, type TEXT,
+           call_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT);",
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO session_message VALUES ('msg1','ses_test','assistant',1,1000,1000,'{\"content\":[]}')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO session_part VALUES ('msg1','ses_test',0,'reasoning','',1000,1000,'{\"type\":\"reasoning\",\"text\":\"internal\"}')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO session_part VALUES ('msg1','ses_test',1,'text','',1000,1000,'{\"type\":\"text\",\"text\":\"Which file should I edit?\"}')",
+        [],
+    )
+    .unwrap();
+    let text = session_keeper::db::last_assistant_text(&conn, "ses_test");
+    assert_eq!(text, "Which file should I edit?");
+}
+
+#[test]
+fn assistant_text_prefers_legacy_content_when_present() {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(
+        "CREATE TABLE session_message (
+           id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER,
+           time_created INTEGER, time_updated INTEGER, data TEXT);",
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO session_message VALUES ('msg2','ses_test','assistant',1,1000,1000,'{\"content\":[{\"type\":\"text\",\"text\":\"legacy answer\"}]}')",
+        [],
+    )
+    .unwrap();
+    assert_eq!(
+        session_keeper::db::last_assistant_text(&conn, "ses_test"),
+        "legacy answer"
+    );
+}

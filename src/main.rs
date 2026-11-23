@@ -562,6 +562,11 @@ fn refresh(
     filter: &Rc<RefCell<String>>,
     attention: &Rc<RefCell<bool>>,
 ) {
+    // Rebuilding the cards must not throw the operator back to the top of the list.
+    let scroll = list
+        .parent()
+        .and_then(|parent| parent.downcast::<gtk::ScrolledWindow>().ok());
+    let saved_scroll = scroll.as_ref().map(|s| s.vadjustment().value());
     for child in list.children() {
         list.remove(&child);
     }
@@ -604,11 +609,23 @@ fn refresh(
             continue;
         }
 
-        let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        let card = gtk::Box::new(gtk::Orientation::Vertical, 8);
         card.style_context().add_class("card");
+        if !needs_attention(&status) && status != Status::Unknown {
+            card.style_context().add_class("card-calm");
+        }
+        match status {
+            Status::Stalled => card.style_context().add_class("card-critical"),
+            Status::Due | Status::Waiting => card.style_context().add_class("card-urgent"),
+            _ => {}
+        }
 
         let top = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-        let badge = gtk::Label::new(Some(status_text(&status)));
+        let badge = gtk::Label::new(Some(&format!(
+            "{}{}",
+            session_keeper::ui::status_glyph(&status),
+            status_text(&status)
+        )));
         badge.style_context().add_class("badge");
         badge.style_context().add_class(status_class(&status));
         badge.set_size_request(118, -1);
@@ -619,7 +636,7 @@ fn refresh(
             .map(|v| !v.exists && v.status != Status::Unknown)
             .unwrap_or(false)
         {
-            badge.set_label("missing");
+            badge.set_label("✕ missing");
             badge.style_context().add_class("badge-stalled");
         }
         top.add(&badge);
@@ -637,6 +654,11 @@ fn refresh(
         top.add(&id_label);
 
         let pause = gtk::Button::with_label(if s.enabled { "Pause" } else { "Resume" });
+        pause.set_tooltip_text(Some(if s.enabled {
+            "Pause checks for this session only"
+        } else {
+            "Resume checks for this session only"
+        }));
         let st = state.clone();
         let list_c = list.clone();
         let views_c = views.clone();
@@ -702,6 +724,7 @@ fn refresh(
         };
         let receipt_label = gtk::Label::new(Some(&receipts));
         receipt_label.style_context().add_class("note");
+        receipt_label.style_context().add_class("mono");
         receipt_label.set_xalign(0.0);
         card.add(&receipt_label);
         meta.style_context().add_class("session-meta");
@@ -709,8 +732,10 @@ fn refresh(
         meta.set_line_wrap(true);
         card.add(&meta);
 
-        let actions = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+        let actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let details = icon_button("Details", "help-about-symbolic");
+        details.set_tooltip_text(Some("Show state, model, prompt and recent history"));
+        details.style_context().add_class("flat-action");
         let sid_details = s.id.clone();
         let st_details = state.clone();
         let views_details = views.clone();
@@ -754,6 +779,8 @@ fn refresh(
         actions.add(&details);
 
         let edit = icon_button("Edit prompt", "document-edit-symbolic");
+        edit.set_tooltip_text(Some("Change the nudge prompt for this session"));
+        edit.style_context().add_class("flat-action");
         let st = state.clone();
         let list_c = list.clone();
         let views_c = views.clone();
@@ -766,7 +793,9 @@ fn refresh(
         }));
         actions.add(&edit);
 
-        let model_btn = icon_button("Model", "preferences-system-symbolic");
+        let model_btn = icon_button("Choose model", "preferences-system-symbolic");
+        model_btn.set_tooltip_text(Some("Choose the model used by this session"));
+        model_btn.style_context().add_class("flat-action");
         let sid_model = s.id.clone();
         let tx_model = MODEL_TX
             .get()
@@ -785,6 +814,8 @@ fn refresh(
         actions.add(&model_btn);
 
         let kick = icon_button("Kick", "mail-send-symbolic");
+        kick.set_tooltip_text(Some("Send the nudge now, bypassing the safety gates"));
+        kick.style_context().add_class("suggested-action");
         let kick_cooldown = kick.clone();
         let sid_kick = s.id.clone();
         let prompt_kick = s.prompt.clone().unwrap_or_default();
@@ -851,6 +882,8 @@ fn refresh(
         actions.add(&kick);
 
         let del = icon_button("Remove", "user-trash-symbolic");
+        del.set_tooltip_text(Some("Remove this session and its stored data"));
+        del.style_context().add_class("remove-action");
         let st = state.clone();
         let list_c = list.clone();
         let views_c = views.clone();
@@ -874,12 +907,16 @@ fn refresh(
     }
     if sessions.is_empty() {
         let empty = gtk::Label::new(Some(
-            "No watched sessions. Add a session id in the field above.",
+            "Nothing under watch yet. Add a session id above, or use Discover to find live OpenCode sessions.",
         ));
         empty.style_context().add_class("note");
+        empty.set_line_wrap(true);
         list.add(&empty);
     }
     list.show_all();
+    if let (Some(scroll), Some(value)) = (scroll, saved_scroll) {
+        scroll.vadjustment().set_value(value);
+    }
 }
 
 fn edit_prompt(
@@ -1512,6 +1549,14 @@ fn main() {
 
     if let Some(screen) = gtk::gdk::Screen::default() {
         let provider = gtk::CssProvider::new();
+        // GTK3 CSS parse errors are silent by default; surface them in the log.
+        provider.connect_parsing_error(|_, section, error| {
+            log_line(&format!(
+                "CSS parse error: {} (line {})",
+                error,
+                section.start_line() + 1
+            ));
+        });
         let _ = provider.load_from_data(CSS.as_bytes());
         gtk::StyleContext::add_provider_for_screen(
             &screen,
@@ -1669,6 +1714,7 @@ fn main() {
     } else {
         "Resume all"
     });
+    pause_toggle.set_tooltip_text(Some("Pause health checks for all sessions"));
     pause_toggle.style_context().add_class("destructive-action");
     let st_pause = state.clone();
     let summary_pause = summary.clone();
@@ -1691,6 +1737,7 @@ fn main() {
     controls.add(&pause_toggle);
 
     let add = icon_button("Add session", "list-add-symbolic");
+    add.set_tooltip_text(Some("Add a watched session by id"));
     let st_add = state.clone();
     let list_add = Rc::new(RefCell::new(gtk::Box::new(gtk::Orientation::Vertical, 2)));
     let views_add = views.clone();
@@ -1719,6 +1766,7 @@ fn main() {
     controls.add(&add);
 
     let discover = icon_button("Discover", "system-search-symbolic");
+    discover.set_tooltip_text(Some("List live OpenCode sessions to add"));
     discover.connect_clicked(|_| {
         let tx = match SESSION_TX.get() {
             Some(t) => t.clone(),
@@ -1734,6 +1782,7 @@ fn main() {
     controls.add(&discover);
 
     let check = icon_button("Check now", "view-refresh-symbolic");
+    check.set_tooltip_text(Some("Run a health check immediately (F5)"));
     check.style_context().add_class("suggested-action");
     let st_check = state.clone();
     let tx_check = tx.clone();

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Redesigned UI: tinted badges with shape glyphs, urgency accent on card edges, quiet secondary actions with one emphasized Kick button, hairline depth, calmer type scale, focus rings, thin scrollbars, tooltips and preserved list scroll position.
+- OpenCode 2.4 compatibility: assistant text is read from `session_part` rows when the legacy `content` array is empty, so question and loop guards keep working. Default paths now cover both `opencode` and `opencode2` install names.
+
 ## v0.3.1 (2026-11-22)
 
 - Removed internal development notes from the public repository.

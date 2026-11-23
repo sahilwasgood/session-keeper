@@ -11,6 +11,18 @@ pub fn status_text(status: &Status) -> &'static str {
     }
 }
 
+/// A shape cue paired with the text label, so status never relies on colour alone.
+pub fn status_glyph(status: &Status) -> &'static str {
+    match status {
+        Status::Due => "◷ ",
+        Status::Nudged => "➤ ",
+        Status::Waiting => "? ",
+        Status::Stalled => "✕ ",
+        Status::Clean => "● ",
+        Status::Unknown => "○ ",
+    }
+}
+
 pub fn status_class(status: &Status) -> &'static str {
     match status {
         Status::Due => "badge-due",
@@ -134,86 +146,152 @@ pub fn summary_line(stamp: &str, nudged: i64, held: i64) -> String {
 }
 
 pub const CSS: &str = r#"
+/* Design tokens. Theme-derived colours keep the app at home in light, dark
+   and HighContrast themes; colour is reserved for status, never decoration. */
+@define-color ink @theme_fg_color;
+@define-color ink2 alpha(@theme_fg_color, 0.78);
+@define-color ink3 alpha(@theme_fg_color, 0.58);
+@define-color hairline alpha(@theme_fg_color, 0.13);
+@define-color quietline alpha(@theme_fg_color, 0.07);
+@define-color wash alpha(@theme_fg_color, 0.05);
+@define-color wash2 alpha(@theme_fg_color, 0.09);
+@define-color focus @theme_selected_bg_color;
+
 window {
     background-color: @theme_bg_color;
     background-image: none;
-    color: @theme_fg_color;
-    font-family: "DejaVu Sans", sans-serif;
-    font-size: 14px;
+    color: @ink;
+    font-family: Inter, "Noto Sans", "DejaVu Sans", sans-serif;
+    font-size: 10.5pt;
 }
+button:focus, entry:focus, checkbutton:focus, combobox:focus {
+    outline-style: solid; outline-width: 2px; outline-color: @focus; outline-offset: 1px;
+}
+
 headerbar {
     background-color: @theme_bg_color;
     background-image: none;
-    color: @theme_fg_color;
-    padding: 8px 12px;
-    font-size: 16px;
-    font-weight: bold;
+    color: @ink;
+    border-bottom: 1px solid @hairline;
+    box-shadow: none;
+    padding: 6px 12px;
     min-height: 44px;
 }
+headerbar .title { font-size: 12pt; font-weight: 600; }
+headerbar .subtitle { font-size: 9pt; color: @ink3; }
+
 button {
-    background-color: @theme_bg_color;
+    background-color: transparent;
     background-image: none;
-    color: @theme_fg_color;
-    border: 1px solid @borders;
-    border-radius: 8px;
-    padding: 7px 14px;
-    font-size: 14px;
+    color: @ink;
+    border: 1px solid @hairline;
+    border-radius: 6px;
+    padding: 6px 12px;
+    min-height: 24px;
+    font-size: 10pt;
+    font-weight: 500;
+    transition: background-color 120ms ease-out, border-color 120ms ease-out;
 }
-/* shade() keeps hover/active legible in both light and dark themes;
-   a fixed dark hex once left dark-theme text unreadable on hover. */
-button:hover { background-color: shade(@theme_bg_color, 0.92); }
-button:active { background-color: shade(@theme_bg_color, 0.84); }
+button:hover { background-color: @wash; border-color: @wash2; }
+button:active { background-color: @wash2; }
+button:disabled { opacity: 0.5; }
+
 button.suggested-action {
-    background-color: #2d7d46;
-    border-color: #3aa359;
-    color: #ffffff;
-    font-weight: bold;
+    background-color: @focus;
+    border-color: @focus;
+    color: @theme_selected_fg_color;
+    font-weight: 600;
 }
-button.suggested-action:hover { background-color: #31804a; }
-button.suggested-action:active { background-color: #24663b; }
+button.suggested-action:hover { background-color: shade(@focus, 1.08); }
+button.suggested-action:active { background-color: shade(@focus, 0.92); }
+
 button.destructive-action {
-    background-color: #7d2d2d;
-    border-color: #a33a3a;
-    color: #ffffff;
+    background-color: alpha(@error_color, 0.16);
+    border-color: alpha(@error_color, 0.35);
+    color: @error_color;
 }
-button.destructive-action:hover { background-color: #993838; }
-button.destructive-action:active { background-color: #612424; }
+button.destructive-action:hover { background-color: alpha(@error_color, 0.24); }
+
+button.flat-action {
+    background-color: transparent;
+    border-color: transparent;
+    color: @ink2;
+}
+button.flat-action:hover { background-color: @wash; color: @ink; }
+
+button.remove-action {
+    background-color: transparent;
+    border-color: transparent;
+    color: alpha(@error_color, 0.8);
+}
+button.remove-action:hover {
+    background-color: alpha(@error_color, 0.14);
+    color: @error_color;
+}
+
+.card-calm { background-color: alpha(@theme_fg_color, 0.015); }
+
 entry {
     background-color: @theme_base_color;
     background-image: none;
-    color: @theme_text_color;
-    border: 1px solid @borders;
-    border-radius: 8px;
-    padding: 8px 10px;
-    font-size: 14px;
+    color: @ink;
+    border: 1px solid @hairline;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 10pt;
 }
+entry:focus { border-color: @focus; }
+entry.placeholder { color: @ink3; }
+
+combobox {
+    font-size: 10pt;
+}
+
 .card {
     background-color: @theme_base_color;
     background-image: none;
-    border: 1px solid @borders;
-    border-radius: 10px;
-    padding: 12px;
-    margin: 4px 6px;
+    border: 1px solid @quietline;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin: 3px 4px;
+    transition: background-color 120ms ease-out, border-color 120ms ease-out;
 }
-.session-id { font-size: 15px; font-weight: bold; color: @theme_fg_color; }
-/* insensitive_fg_color measured ~3:1; alpha fg keeps hierarchy at >=6:1 in both themes. */
-.session-meta { font-size: 13px; color: alpha(@theme_fg_color, 0.8); }
+.card:hover { background-color: @wash; border-color: @hairline; }
+.card-urgent { border-left: 3px solid @warning_color; }
+.card-critical { border-left: 3px solid @error_color; }
+
+.session-id { font-size: 10.5pt; font-weight: 600; color: @ink; }
+.session-meta { font-size: 9pt; color: @ink2; }
+.mono { font-family: "DejaVu Sans Mono", "Noto Sans Mono", monospace; font-size: 9pt; }
+
 .badge {
-    border-radius: 10px;
-    padding: 3px 10px;
-    font-size: 13px;
-    font-weight: bold;
-    min-width: 84px;
+    border-radius: 6px;
+    padding: 3px 9px;
+    font-size: 9pt;
+    font-weight: 600;
+    min-width: 108px;
 }
-.badge-due { background-color: #8a5a00; color: #ffe6b3; }
-.badge-nudged { background-color: #1f5a8a; color: #d6ecff; }
-.badge-waiting { background-color: #5a3a8a; color: #ece0ff; }
-.badge-stalled { background-color: #8a2d2d; color: #ffdede; }
-.badge-idle { background-color: #2d6b3f; color: #d8ffe2; }
-.badge-unknown { background-color: #555555; color: #f0f0f0; }
-/* was @theme_selected_bg_color as a foreground: 1.61:1, unreadable. */
-.summary { font-size: 15px; font-weight: bold; color: @theme_fg_color; padding: 6px 2px; }
-.note { font-size: 12px; color: alpha(@theme_fg_color, 0.8); }
+.badge-due { background-color: alpha(@warning_color, 0.18); color: @warning_color; }
+.badge-nudged { background-color: alpha(@theme_selected_bg_color, 0.16); color: @theme_selected_bg_color; }
+.badge-waiting { background-color: alpha(@warning_color, 0.14); color: @warning_color; }
+.badge-stalled { background-color: alpha(@error_color, 0.18); color: @error_color; }
+.badge-idle { background-color: alpha(@success_color, 0.16); color: @success_color; }
+.badge-unknown { background-color: @wash2; color: @ink2; }
+
+.summary { font-size: 11pt; font-weight: 600; color: @ink; padding: 4px 2px; }
+.note { font-size: 9pt; color: @ink3; }
+
+expander title { font-size: 10pt; font-weight: 500; color: @ink2; }
+scrollbar { background-color: transparent; border: none; }
+scrollbar trough { background-color: transparent; }
+scrollbar slider {
+    background-color: alpha(@ink3, 0.45);
+    border-radius: 4px;
+    min-width: 7px;
+    min-height: 7px;
+}
+scrollbar slider:hover { background-color: alpha(@ink3, 0.7); }
+scrollbar button { border: none; background-color: transparent; }
 "#;
 
 #[cfg(test)]

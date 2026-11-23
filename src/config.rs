@@ -201,12 +201,24 @@ pub fn local_day_start_ms(now_ms: i64) -> i64 {
     }
 }
 
+/// Prefer whichever OpenCode install actually exists. OpenCode 2 still uses
+/// the `opencode` folder on most systems, but some installs use `opencode2`.
+fn first_existing(candidates: &[PathBuf]) -> PathBuf {
+    candidates
+        .iter()
+        .find(|path| path.exists())
+        .cloned()
+        .unwrap_or_else(|| candidates[0].clone())
+}
+
 impl Config {
     pub fn db_path() -> PathBuf {
-        env_path(
-            "SESSION_KEEPER_DB",
+        let candidates = [
             home().join(".local/share/opencode/opencode.db"),
-        )
+            home().join(".local/share/opencode2/opencode.db"),
+            home().join(".local/share/opencode2/opencode2.db"),
+        ];
+        env_path("SESSION_KEEPER_DB", first_existing(&candidates))
     }
     pub fn drive() -> PathBuf {
         env_path(
@@ -248,10 +260,11 @@ impl Config {
         std::env::var("SESSION_KEEPER_API").unwrap_or_else(|_| API.to_string())
     }
     pub fn services_json() -> PathBuf {
-        env_path(
-            "SESSION_KEEPER_SERVICE_JSON",
+        let candidates = [
             home().join(".config/opencode/service.json"),
-        )
+            home().join(".config/opencode2/service.json"),
+        ];
+        env_path("SESSION_KEEPER_SERVICE_JSON", first_existing(&candidates))
     }
     pub fn dry_run() -> bool {
         std::env::var("SESSION_KEEPER_DRY_RUN")

@@ -26,22 +26,57 @@ fn last_event(conn: &Connection, sid: &str) -> (Option<String>, i64, String) {
     .unwrap_or((None, 0, String::new()))
 }
 
+fn text_from_part_data(data: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(data)
+        .ok()
+        .and_then(|v| v.get("text").and_then(|t| t.as_str()).map(str::to_string))
+}
+
+/// OpenCode 2.4 stores assistant parts in `session_part` instead of the
+/// message's `content` array. Older installs keep the array path below.
+fn part_text(conn: &Connection, message_id: &str, sid: &str) -> Option<String> {
+    let by_message: Option<String> = conn
+        .query_row(
+            "SELECT data FROM session_part WHERE message_id=?1 AND type='text'
+             ORDER BY ordinal DESC LIMIT 1",
+            [message_id],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()
+        .ok()
+        .flatten();
+    if let Some(text) = by_message.and_then(|d| text_from_part_data(&d)) {
+        return Some(text);
+    }
+    // Some writes carry only the session id; use the newest text part then.
+    conn.query_row(
+        "SELECT data FROM session_part WHERE session_id=?1 AND type='text'
+         ORDER BY time_created DESC, ordinal DESC LIMIT 1",
+        [sid],
+        |r| r.get::<_, String>(0),
+    )
+    .optional()
+    .ok()
+    .flatten()
+    .and_then(|d| text_from_part_data(&d))
+}
+
 // Public so callers can fetch timestamp+text in one query instead of two.
 pub fn last_assistant(conn: &Connection, sid: &str) -> (i64, String) {
-    let row: Option<(i64, String)> = conn
+    let row: Option<(String, i64, String)> = conn
         .query_row(
-            "SELECT time_created, data FROM session_message
+            "SELECT id, time_created, data FROM session_message
              WHERE session_id=?1 AND type='assistant'
              ORDER BY seq DESC LIMIT 1",
             [sid],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .optional()
         .unwrap_or(None);
     match row {
         None => (0, String::new()),
-        Some((ts, data)) => {
-            let text = serde_json::from_str::<serde_json::Value>(&data)
+        Some((message_id, ts, data)) => {
+            let legacy = serde_json::from_str::<serde_json::Value>(&data)
                 .ok()
                 .and_then(|v| v.get("content").and_then(|c| c.as_array()).cloned())
                 .and_then(|parts| {
@@ -51,7 +86,10 @@ pub fn last_assistant(conn: &Connection, sid: &str) -> (i64, String) {
                         .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
                         .next_back()
                         .map(str::to_string)
-                })
+                });
+            let text = legacy
+                .filter(|t| !t.trim().is_empty())
+                .or_else(|| part_text(conn, &message_id, sid))
                 .unwrap_or_default();
             (ts, text.trim().to_string())
         }
@@ -100,7 +138,7 @@ pub fn last_idle_ts(conn: &Connection, sid: &str) -> i64 {
         "SELECT time_created FROM session_message WHERE session_id=?1 AND type='idle'
          ORDER BY seq DESC LIMIT 1",
         [sid],
-        |r| r.get(0),
+        |r| r.get::<_, i64>(0),
     )
     .optional()
     .unwrap_or(None)

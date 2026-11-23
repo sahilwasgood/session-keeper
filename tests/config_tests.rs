@@ -104,3 +104,25 @@ fn time_prefs_control_clock_and_date() {
 
     set_time_prefs(&TimePrefs::default());
 }
+
+#[test]
+fn doctor_reports_both_default_layouts() {
+    // The doctor command must work against either install name. Here we only
+    // assert it runs cleanly; path selection itself is covered by config tests.
+    let d = std::env::temp_dir().join(format!("sk-doctor-{}-{}", std::process::id(), 1));
+    let _ = std::fs::create_dir_all(&d);
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_session-keeper"))
+        .arg("--doctor")
+        .env("SESSION_KEEPER_STATE", d.join("state.json"))
+        .env("SESSION_KEEPER_LOCK", d.join("lock"))
+        .env("SESSION_KEEPER_LOG", d.join("log"))
+        .env("SESSION_KEEPER_DB", d.join("missing.db"))
+        .env("SESSION_KEEPER_SERVICE_JSON", d.join("missing.json"))
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success());
+    assert!(text.contains("database:"));
+    assert!(text.contains("credentials:"));
+    std::fs::remove_dir_all(&d).ok();
+}

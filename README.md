@@ -42,6 +42,10 @@ session-keeper                       open the GUI
 --version | --help
 ```
 
+## OpenCode compatibility
+
+Works with OpenCode 1.x and 2.x, including v2.4's storage change where assistant text lives in `session_part` rows instead of the message's `content` array. Both layouts are read automatically. The default paths cover the standard `opencode` and `opencode2` install names; if yours differs, set `SESSION_KEEPER_DB` and `SESSION_KEEPER_SERVICE_JSON` in the env file. The HTTP API paths used by Session Keeper (`/api/session`, `/api/session/{id}/prompt`, `/api/model`, `/api/event`) remain available in OpenCode 2.4.
+
 ## Configuration
 
 Defaults follow a standard OpenCode install: database `~/.local/share/opencode/opencode.db`, server `http://127.0.0.1:4096`, credentials `~/.config/opencode/service.json`, and app state under `~/.config/session-keeper/`. No setup is needed if OpenCode is installed in the usual locations.
