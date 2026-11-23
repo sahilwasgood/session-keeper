@@ -66,9 +66,12 @@ pub fn watch_events(
     let url = event_url(api);
     let mut was_connected = false;
     let mut last_error: Option<Instant> = None;
+    let mut reconnect_delay: Duration;
     while !stop.load(Ordering::Relaxed) {
+        // ureq's timeout covers the whole request, including reading a long-lived
+        // SSE body. A short value here drops perfectly healthy streams every 30s.
         let request = ureq::get(&url)
-            .timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(300))
             .set("Authorization", &auth_header(password))
             .set("Accept", "text/event-stream");
         match request.call() {
@@ -100,6 +103,9 @@ pub fn watch_events(
                     connected.store(false, Ordering::Relaxed);
                     was_connected = false;
                 }
+                // The server closed a stream we were reading normally; reconnect
+                // quickly instead of treating it like a connection failure.
+                reconnect_delay = Duration::from_millis(200);
             }
             Err(e) => {
                 if was_connected {
@@ -115,11 +121,12 @@ pub fn watch_events(
                     crate::nudge::log_line(&format!("event stream retry: {}", e));
                     last_error = Some(now);
                 }
+                reconnect_delay = Duration::from_secs(5);
             }
         }
         if stop.load(Ordering::Relaxed) {
             break;
         }
-        std::thread::sleep(Duration::from_secs(5));
+        std::thread::sleep(reconnect_delay);
     }
 }
