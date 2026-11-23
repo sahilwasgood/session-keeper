@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.4.2 (2026-11-24)
+
+- README screenshot refreshed from the redesigned UI using sanitized demo data.
+- Nudge HTTP failures now report `HTTP <code>` consistently with other API errors.
+
 ## v0.4.1 (2026-11-24)
 
 - `--doctor` now reports the detected OpenCode storage layout (legacy content array vs v2.4 `session_part` rows).
