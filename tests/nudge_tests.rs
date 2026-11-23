@@ -1,6 +1,6 @@
-use session_keeper_rust::db::Status;
-use session_keeper_rust::nudge::{decide, decide_with_history, Decision};
-use session_keeper_rust::state::{Session, State};
+use session_keeper::db::Status;
+use session_keeper::nudge::{decide, decide_with_history, Decision};
+use session_keeper::state::{Session, State};
 
 fn sess() -> Session {
     Session {
@@ -76,11 +76,11 @@ fn due_session_is_nudged() {
 
 #[test]
 fn notify_send_availability_is_cached_and_notify_does_not_panic() {
-    let a = session_keeper_rust::nudge::notify_send_available();
-    let b = session_keeper_rust::nudge::notify_send_available();
+    let a = session_keeper::nudge::notify_send_available();
+    let b = session_keeper::nudge::notify_send_available();
     assert_eq!(a, b, "availability check must be stable within a process");
     // Dispatch is best-effort: must never panic whether or not the transport exists.
-    let _ = session_keeper_rust::nudge::notify("Session Keeper", "test");
+    let _ = session_keeper::nudge::notify("Session Keeper", "test");
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn combined_global_count_survives_missing_history() {
     st.recent_nudges.push(now - 1000);
     st.recent_nudges.push(now - 2000);
     st.recent_nudges.push(now - 4_000_000);
-    let count = session_keeper_rust::nudge::nudges_in_last_hour_combined(now, &st);
+    let count = session_keeper::nudge::nudges_in_last_hour_combined(now, &st);
     assert!(
         count >= 2,
         "in-state nudges must count when history is gone: {}",

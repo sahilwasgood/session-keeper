@@ -1,5 +1,5 @@
-use session_keeper_rust::config::{format_log_time, format_utc_time};
-use session_keeper_rust::nudge::rotate_text;
+use session_keeper::config::{format_log_time, format_utc_time};
+use session_keeper::nudge::rotate_text;
 
 fn lines(n: usize) -> String {
     (0..n)
@@ -108,7 +108,7 @@ fn local_hms(epoch: i64) -> String {
 #[test]
 fn log_time_uses_machine_local_timezone() {
     // Pin display settings so only the timezone behavior is under test.
-    session_keeper_rust::config::set_time_prefs(&session_keeper_rust::config::TimePrefs {
+    session_keeper::config::set_time_prefs(&session_keeper::config::TimePrefs {
         timezone: "auto".to_string(),
         clock_24h: true,
         date_style: "none".to_string(),
@@ -122,7 +122,7 @@ fn log_time_uses_machine_local_timezone() {
 fn rotate_text_handles_keep_larger_than_lines() {
     let text = "a\nb\nc";
     assert_eq!(
-        session_keeper_rust::nudge::rotate_text(text, 2, 100),
+        session_keeper::nudge::rotate_text(text, 2, 100),
         "a\nb\nc\n"
     );
 }

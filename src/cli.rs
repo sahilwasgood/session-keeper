@@ -137,7 +137,7 @@ pub fn parse_args(args: &[String]) -> Options {
 }
 
 pub const HELP: &str = "Session Keeper
-Usage: session-keeper-rust [options]
+Usage: session-keeper [options]
 
 Options:
   (none)                            Open the window and run the watchdog while it is open

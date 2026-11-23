@@ -1,7 +1,7 @@
-use session_keeper_rust::db::Status;
-use session_keeper_rust::nudge::{decide_with_history, Decision};
-use session_keeper_rust::safety::{fingerprint, should_nudge_after_debounce};
-use session_keeper_rust::state::{Session, State};
+use session_keeper::db::Status;
+use session_keeper::nudge::{decide_with_history, Decision};
+use session_keeper::safety::{fingerprint, should_nudge_after_debounce};
+use session_keeper::state::{Session, State};
 
 fn sess() -> Session {
     Session {

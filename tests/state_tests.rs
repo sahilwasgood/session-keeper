@@ -1,4 +1,4 @@
-use session_keeper_rust::state::State;
+use session_keeper::state::State;
 use std::path::Path;
 
 #[test]
@@ -20,7 +20,7 @@ fn save_then_load_preserves_session_fields() {
     s.alert_cooldown_s = 600;
     s.persist_dry_run = true;
     s.persist_notifications = false;
-    s.sessions.push(session_keeper_rust::state::Session {
+    s.sessions.push(session_keeper::state::Session {
         id: "ses_test".to_string(),
         enabled: true,
         prompt: Some("go on".to_string()),
@@ -60,18 +60,18 @@ fn save_then_load_preserves_session_fields() {
 
 #[test]
 fn states_differ_detects_changes() {
-    let a = session_keeper_rust::state::State::default();
+    let a = session_keeper::state::State::default();
     let mut b = a.clone();
-    assert!(!session_keeper_rust::state::states_differ(&a, &b));
+    assert!(!session_keeper::state::states_differ(&a, &b));
     b.min_gap = 99;
-    assert!(session_keeper_rust::state::states_differ(&a, &b));
+    assert!(session_keeper::state::states_differ(&a, &b));
 }
 
 #[test]
 fn corrupt_state_is_backed_up() {
     let path = std::path::Path::new("/tmp/sk-corrupt-state.json");
     std::fs::write(path, "{not json").unwrap();
-    let s = session_keeper_rust::state::State::load_from_path(path);
+    let s = session_keeper::state::State::load_from_path(path);
     assert!(s.sessions.is_empty());
     let backed: Vec<_> = std::fs::read_dir("/tmp")
         .unwrap()
@@ -91,9 +91,9 @@ fn corrupt_state_is_backed_up() {
 
 #[test]
 fn tick_merge_preserves_user_edits() {
-    use session_keeper_rust::state::{apply_tick_fields, GlobalTickFields, TickFields};
-    let mut st = session_keeper_rust::state::State::default();
-    st.sessions.push(session_keeper_rust::state::Session {
+    use session_keeper::state::{apply_tick_fields, GlobalTickFields, TickFields};
+    let mut st = session_keeper::state::State::default();
+    st.sessions.push(session_keeper::state::Session {
         id: "ses_a".to_string(),
         enabled: false,
         prompt: Some("my prompt".to_string()),

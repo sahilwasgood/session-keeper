@@ -1,4 +1,4 @@
-use session_keeper_rust::cli::{parse_args, Mode, HELP};
+use session_keeper::cli::{parse_args, Mode, HELP};
 
 fn a(v: &[&str]) -> Vec<String> {
     v.iter().map(|s| s.to_string()).collect()

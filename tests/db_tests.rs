@@ -1,6 +1,6 @@
 use rusqlite::Connection;
-use session_keeper_rust::db::{classify, is_question, Status};
-use session_keeper_rust::state::{Session, State};
+use session_keeper::db::{classify, is_question, Status};
+use session_keeper::state::{Session, State};
 
 fn session() -> Session {
     Session {

@@ -1,4 +1,4 @@
-use session_keeper_rust::state::{
+use session_keeper::state::{
     apply_tick_fields, states_differ, GlobalTickFields, Session, State, TickFields,
 };
 

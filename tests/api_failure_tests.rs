@@ -1,4 +1,4 @@
-use session_keeper_rust::nudge::{send_nudge_with_retry, send_nudge_with_timeout};
+use session_keeper::nudge::{send_nudge_with_retry, send_nudge_with_timeout};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::mpsc;
@@ -141,7 +141,7 @@ fn hung_server_times_out() {
 fn malformed_success_body_is_not_a_success() {
     let response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 8\r\nConnection: close\r\n\r\nnot json".to_string();
     let (api, _rx) = scripted(vec![response]);
-    let result = session_keeper_rust::nudge::send_nudge_with_timeout(
+    let result = session_keeper::nudge::send_nudge_with_timeout(
         &api,
         "pw",
         "ses_x",
@@ -160,7 +160,7 @@ fn pending_permission_detects_human_input() {
     let body = r#"{"data":[{"id":"perm1"}]}"#;
     let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
     let (api, _rx) = scripted(vec![response]);
-    assert!(session_keeper_rust::nudge::has_pending_human_input(
+    assert!(session_keeper::nudge::has_pending_human_input(
         &api, "pw", "ses_x"
     ));
 }
@@ -170,7 +170,7 @@ fn empty_permission_means_no_human_input() {
     let body = r#"{"data":[]}"#;
     let response = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
     let (api, _rx) = scripted(vec![response]);
-    assert!(!session_keeper_rust::nudge::has_pending_human_input(
+    assert!(!session_keeper::nudge::has_pending_human_input(
         &api, "pw", "ses_x"
     ));
 }

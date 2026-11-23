@@ -1,4 +1,4 @@
-use session_keeper_rust::events::is_relevant_event_line;
+use session_keeper::events::is_relevant_event_line;
 
 #[test]
 fn relevant_event_lines_are_detected() {
@@ -25,7 +25,7 @@ fn unrelated_or_malformed_lines_are_ignored() {
 
 #[test]
 fn event_url_uses_repeated_type_filters() {
-    let url = session_keeper_rust::events::event_url("http://localhost:49374/");
+    let url = session_keeper::events::event_url("http://localhost:49374/");
     assert_eq!(
         url,
         "http://localhost:49374/api/event?types=session.idle&types=session.status&types=permission.asked&types=form.created"
@@ -62,13 +62,7 @@ fn watcher_marks_disconnected_when_stream_ends_cleanly() {
     let watcher_stop = stop.clone();
     let watcher_connected = connected.clone();
     let handle = std::thread::spawn(move || {
-        session_keeper_rust::events::watch_events(
-            &api,
-            "pw",
-            wake_tx,
-            watcher_stop,
-            watcher_connected,
-        );
+        session_keeper::events::watch_events(&api, "pw", wake_tx, watcher_stop, watcher_connected);
     });
     assert!(
         wake_rx.recv_timeout(Duration::from_secs(3)).is_ok(),

@@ -1,4 +1,4 @@
-use session_keeper_rust::process::{pid_alive, read_lock};
+use session_keeper::process::{pid_alive, read_lock};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -84,7 +84,7 @@ fn own_pid_is_alive() {
 fn version_mode_does_not_create_lock() {
     let lock = tmp("version-lock");
     let _ = std::fs::remove_file(&lock);
-    let out = Command::new(env!("CARGO_BIN_EXE_session-keeper-rust"))
+    let out = Command::new(env!("CARGO_BIN_EXE_session-keeper"))
         .arg("--version")
         .env("SESSION_KEEPER_LOCK", &lock)
         .output()
@@ -101,7 +101,7 @@ fn status_mode_does_not_create_lock() {
     let lock = tmp("status-lock");
     let state = tmp("status-state");
     let _ = std::fs::remove_file(&lock);
-    let out = Command::new(env!("CARGO_BIN_EXE_session-keeper-rust"))
+    let out = Command::new(env!("CARGO_BIN_EXE_session-keeper"))
         .args(["--status", "--json"])
         .env("SESSION_KEEPER_LOCK", &lock)
         .env("SESSION_KEEPER_STATE", &state)
@@ -119,8 +119,8 @@ fn status_mode_does_not_create_lock() {
 fn create_lock_writes_pid_with_private_mode() {
     let path = std::path::Path::new("/tmp/sk-create-lock-test.lock");
     let _ = std::fs::remove_file(path);
-    session_keeper_rust::process::create_lock(path, 4242).unwrap();
-    assert_eq!(session_keeper_rust::process::read_lock(path), Some(4242));
+    session_keeper::process::create_lock(path, 4242).unwrap();
+    assert_eq!(session_keeper::process::read_lock(path), Some(4242));
     use std::os::unix::fs::PermissionsExt;
     let mode = std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);

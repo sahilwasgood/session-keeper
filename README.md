@@ -1,6 +1,6 @@
 # Session Keeper (Rust)
 
-[![CI](https://github.com/sahilwasgood/session-keeper-rust/actions/workflows/ci.yml/badge.svg)](https://github.com/sahilwasgood/session-keeper-rust/actions/workflows/ci.yml)
+[![CI](https://github.com/sahilwasgood/session-keeper/actions/workflows/ci.yml/badge.svg)](https://github.com/sahilwasgood/session-keeper/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ![Session Keeper main window](docs/images/gui.png)
@@ -26,7 +26,7 @@ A small on-demand watchdog for OpenCode sessions. Nothing runs at boot. Open the
 ## CLI (no window needed)
 
 ```
-session-keeper-rust                       open the GUI
+session-keeper                       open the GUI
 --check-now [--json]                      one watchdog tick, optionally machine-readable
 --status [--json]                         session statuses, optionally machine-readable
 --doctor                                  check database, credentials, API and notifier
@@ -52,7 +52,7 @@ To override any path or the API address, put `KEY=value` lines in `~/.config/ses
 
 ## Troubleshooting
 
-Run `session-keeper-rust --doctor` first. It reports the database path, credentials path, notifier availability, and whether the OpenCode API is reachable.
+Run `session-keeper --doctor` first. It reports the database path, credentials path, notifier availability, and whether the OpenCode API is reachable.
 
 - **Watchdog paused: drive or database unavailable**: the database path is wrong or unreadable. Set `SESSION_KEEPER_DB` in the env file to your `opencode.db`, or check that its drive is mounted.
 - **Events: offline (30s polling fallback active)**: the OpenCode server is not running on the configured port or the credentials are wrong. Nudges still work through the 30-second poll. Restart the server or correct `SESSION_KEEPER_API` and `SESSION_KEEPER_SERVICE_JSON`.
@@ -72,7 +72,7 @@ Linux with GTK3 development headers is required:
 sudo apt-get install libgtk-3-dev libglib2.0-dev pkg-config
 cargo test
 cargo build --release
-install -m 755 target/release/session-keeper-rust ~/.local/bin/session-keeper-rust
+install -m 755 target/release/session-keeper ~/.local/bin/session-keeper
 ```
 
 CI runs the full test suite and a release build on every push and pull request.

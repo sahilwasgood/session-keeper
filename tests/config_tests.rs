@@ -1,4 +1,4 @@
-use session_keeper_rust::config::{format_log_time, format_utc_time, Config};
+use session_keeper::config::{format_log_time, format_utc_time, Config};
 use std::path::PathBuf;
 
 #[test]
@@ -30,7 +30,7 @@ fn dry_run_flag_from_env() {
 #[test]
 fn day_start_matches_local_midnight() {
     let now = 1_795_248_597_000i64;
-    let start = session_keeper_rust::config::local_day_start_ms(now);
+    let start = session_keeper::config::local_day_start_ms(now);
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     let mut secs = (now / 1000) as libc::time_t;
     unsafe {
@@ -43,7 +43,7 @@ fn day_start_matches_local_midnight() {
 
 #[test]
 fn time_prefs_control_clock_and_date() {
-    use session_keeper_rust::config::{set_time_prefs, TimePrefs};
+    use session_keeper::config::{set_time_prefs, TimePrefs};
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()

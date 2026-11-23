@@ -1,4 +1,4 @@
-use session_keeper_rust::process::{pid_alive, read_lock};
+use session_keeper::process::{pid_alive, read_lock};
 
 #[test]
 fn own_pid_is_alive() {

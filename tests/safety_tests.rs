@@ -1,4 +1,4 @@
-use session_keeper_rust::safety::{fingerprint, should_nudge_after_debounce};
+use session_keeper::safety::{fingerprint, should_nudge_after_debounce};
 
 #[test]
 fn fingerprint_is_stable_and_distinct() {
@@ -15,7 +15,7 @@ fn debounce_waits_for_second_idle_check() {
 
 #[test]
 fn repeating_output_detects_aa_and_aba_loops() {
-    use session_keeper_rust::safety::is_repeating_output;
+    use session_keeper::safety::is_repeating_output;
     assert!(is_repeating_output("A", Some("A"), Some("B")));
     assert!(is_repeating_output("A", Some("B"), Some("A")));
     assert!(!is_repeating_output("A", Some("B"), Some("C")));

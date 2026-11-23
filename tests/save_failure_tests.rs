@@ -1,4 +1,4 @@
-use session_keeper_rust::state::State;
+use session_keeper::state::State;
 
 #[test]
 fn save_failure_is_logged_once() {

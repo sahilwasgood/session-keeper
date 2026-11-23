@@ -1,5 +1,5 @@
-use session_keeper_rust::db::Status;
-use session_keeper_rust::ui::{short_id, status_class, status_text, summary_line};
+use session_keeper::db::Status;
+use session_keeper::ui::{short_id, status_class, status_text, summary_line};
 
 #[test]
 fn status_text_is_short_and_human() {
@@ -78,8 +78,8 @@ fn badge_and_button_colors_meet_wcag_aa() {
 
 #[test]
 fn unknown_status_is_explicit_and_not_an_attention_state() {
-    use session_keeper_rust::db::Status;
-    use session_keeper_rust::ui::{needs_attention, status_class, status_text, status_tooltip};
+    use session_keeper::db::Status;
+    use session_keeper::ui::{needs_attention, status_class, status_text, status_tooltip};
     let s = Status::Unknown;
     assert_eq!(status_text(&s), "unknown");
     assert_eq!(status_class(&s), "badge-unknown");

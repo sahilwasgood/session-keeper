@@ -22,7 +22,7 @@ fn hung_api_returns_within_timeout() {
     });
 
     let start = Instant::now();
-    let result = session_keeper_rust::nudge::send_nudge_with_timeout(
+    let result = session_keeper::nudge::send_nudge_with_timeout(
         &format!("http://{}", addr),
         "pw",
         "ses_test",

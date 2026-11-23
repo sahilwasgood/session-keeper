@@ -1,5 +1,5 @@
 use serde_json::Value;
-use session_keeper_rust::state::{Session, State};
+use session_keeper::state::{Session, State};
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
@@ -12,7 +12,7 @@ fn dir(tag: &str) -> PathBuf {
 fn run(d: &PathBuf, state_json: &str) -> Output {
     let state = d.join("state.json");
     std::fs::write(&state, state_json).unwrap();
-    Command::new(env!("CARGO_BIN_EXE_session-keeper-rust"))
+    Command::new(env!("CARGO_BIN_EXE_session-keeper"))
         .args(["--status", "--json"])
         .env("SESSION_KEEPER_STATE", &state)
         .env("SESSION_KEEPER_DB", d.join("no-db.db"))
@@ -156,7 +156,7 @@ fn check_now_json_is_valid_with_expected_shape() {
     let d = dir("checknow");
     let state = d.join("state.json");
     std::fs::write(&state, r#"{"sessions":[]}"#).unwrap();
-    let out = Command::new(env!("CARGO_BIN_EXE_session-keeper-rust"))
+    let out = Command::new(env!("CARGO_BIN_EXE_session-keeper"))
         .args(["--check-now", "--json", "--dry-run"])
         .env("SESSION_KEEPER_STATE", &state)
         .env("SESSION_KEEPER_DB", d.join("no-db.db"))

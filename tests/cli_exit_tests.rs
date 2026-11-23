@@ -23,7 +23,7 @@ fn env_setup(dir: &std::path::Path) -> Vec<(String, String)> {
 }
 
 fn run(dir: &std::path::Path, args: &[&str]) -> std::process::Output {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_session-keeper-rust"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_session-keeper"));
     cmd.args(args);
     for (k, v) in env_setup(dir) {
         cmd.env(k, v);

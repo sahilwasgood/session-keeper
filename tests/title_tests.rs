@@ -1,5 +1,5 @@
 use rusqlite::Connection;
-use session_keeper_rust::db::session_title;
+use session_keeper::db::session_title;
 
 #[test]
 fn title_reads_from_session_v2() {

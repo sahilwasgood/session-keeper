@@ -1,4 +1,4 @@
-use session_keeper_rust::state::{Session, State};
+use session_keeper::state::{Session, State};
 use std::path::PathBuf;
 use std::process::{Command, Output};
 
@@ -39,7 +39,7 @@ fn assert_same(a: &State, b: &State) {
 }
 
 fn run(args: &[&str], state: &PathBuf, lock: &PathBuf) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_session-keeper-rust"))
+    Command::new(env!("CARGO_BIN_EXE_session-keeper"))
         .args(args)
         .env("SESSION_KEEPER_STATE", state)
         .env("SESSION_KEEPER_LOCK", lock)

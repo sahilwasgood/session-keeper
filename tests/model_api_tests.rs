@@ -1,4 +1,4 @@
-use session_keeper_rust::nudge::{fetch_models, switch_model};
+use session_keeper::nudge::{fetch_models, switch_model};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::sync::mpsc;
@@ -132,7 +132,7 @@ fn switch_model_posts_expected_payload_and_headers() {
 
 #[test]
 fn session_id_is_encoded_in_url() {
-    let url = session_keeper_rust::nudge::prompt_url("http://localhost:49374", "ses_a/b?c");
+    let url = session_keeper::nudge::prompt_url("http://localhost:49374", "ses_a/b?c");
     assert_eq!(
         url,
         "http://localhost:49374/api/session/ses_a%2Fb%3Fc/prompt"
@@ -143,7 +143,7 @@ fn session_id_is_encoded_in_url() {
 fn fetch_sessions_parses_id_and_title() {
     let body = r#"{"data":[{"id":"ses_abc","title":"tg"}]}"#;
     let (api, _rx) = mock("200 OK", body);
-    let items = session_keeper_rust::nudge::fetch_sessions(&api, "pw");
+    let items = session_keeper::nudge::fetch_sessions(&api, "pw");
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].id, "ses_abc");
     assert_eq!(items[0].title, "tg");
@@ -152,22 +152,21 @@ fn fetch_sessions_parses_id_and_title() {
 #[test]
 fn result_api_distinguishes_empty_list_from_server_error() {
     let (api, _rx) = mock("200 OK", r#"{"data":[]}"#);
-    assert!(session_keeper_rust::nudge::fetch_models_result(&api, "pw")
+    assert!(session_keeper::nudge::fetch_models_result(&api, "pw")
         .unwrap()
         .is_empty());
     let (api2, _rx2) = mock("500 Internal Server Error", "{}");
-    let err = session_keeper_rust::nudge::fetch_models_result(&api2, "pw").unwrap_err();
+    let err = session_keeper::nudge::fetch_models_result(&api2, "pw").unwrap_err();
     assert!(err.contains("HTTP 500"), "unexpected error: {}", err);
     let (api3, _rx3) = mock("200 OK", r#"{"data":[{"id":"s1","title":"Demo"}]}"#);
-    let sessions = session_keeper_rust::nudge::fetch_sessions_result(&api3, "pw").unwrap();
+    let sessions = session_keeper::nudge::fetch_sessions_result(&api3, "pw").unwrap();
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].title, "Demo");
 }
 
 #[test]
 fn result_api_reports_unreachable_host() {
-    let err =
-        session_keeper_rust::nudge::fetch_sessions_result("http://127.0.0.1:1", "pw").unwrap_err();
+    let err = session_keeper::nudge::fetch_sessions_result("http://127.0.0.1:1", "pw").unwrap_err();
     assert!(
         err.contains("cannot reach OpenCode API"),
         "unexpected error: {}",

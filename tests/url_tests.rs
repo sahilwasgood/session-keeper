@@ -1,4 +1,4 @@
-use session_keeper_rust::nudge::prompt_url;
+use session_keeper::nudge::prompt_url;
 
 #[test]
 fn prompt_url_uses_api_prefix() {

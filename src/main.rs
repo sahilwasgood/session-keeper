@@ -1,24 +1,24 @@
 use glib::clone;
 use gtk::prelude::*;
 use rusqlite::{Connection, OpenFlags};
-use session_keeper_rust::cli::{parse_args, Mode, HELP};
-use session_keeper_rust::config::{load_env_file, set_time_prefs, Config, TimePrefs};
-use session_keeper_rust::db::{
+use session_keeper::cli::{parse_args, Mode, HELP};
+use session_keeper::config::{load_env_file, set_time_prefs, Config, TimePrefs};
+use session_keeper::db::{
     classify, last_assistant_text, last_assistant_ts, last_idle_ts, session_exists, session_model,
     session_title, Status,
 };
-use session_keeper_rust::events::watch_events;
-use session_keeper_rust::nudge::{
+use session_keeper::events::watch_events;
+use session_keeper::nudge::{
     append_history, decide, fetch_models_result, fetch_sessions_result, has_pending_human_input,
     log_line, notify, notify_send_available, nudges_in_last_hour_combined, send_nudge,
     switch_model, Decision, ModelInfo, SessionInfo,
 };
-use session_keeper_rust::process::create_lock;
-use session_keeper_rust::safety::{fingerprint, is_repeating_output, should_nudge_after_debounce};
-use session_keeper_rust::state::{
+use session_keeper::process::create_lock;
+use session_keeper::safety::{fingerprint, is_repeating_output, should_nudge_after_debounce};
+use session_keeper::state::{
     apply_tick_fields, states_differ, GlobalTickFields, Session, State, TickFields,
 };
-use session_keeper_rust::ui::{
+use session_keeper::ui::{
     format_age, history_for_sid, matches_filter, needs_attention, prompt_display, short_id,
     sort_key, status_changed, status_class, status_text, summary_line, CSS,
 };
@@ -360,7 +360,7 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
                         x.nudges += 1;
                         x.last_action = format!(
                             "nudged {}",
-                            session_keeper_rust::config::format_log_time(now / 1000)
+                            session_keeper::config::format_log_time(now / 1000)
                         );
                         x.idle_streak = 0;
                         x.prev_hash = x.last_hash.take();
@@ -438,7 +438,7 @@ fn tick(state: &Rc<RefCell<State>>, persist: bool) -> (String, Vec<TickFields>, 
     };
     (
         summary_line(
-            &session_keeper_rust::config::format_log_time(now / 1000),
+            &session_keeper::config::format_log_time(now / 1000),
             nudged,
             held,
         ),
@@ -531,7 +531,7 @@ fn launch_tick(state: &Rc<RefCell<State>>, tx: &Sender<TickOutcome>, busy: &Rc<C
 
 fn today_digest() -> String {
     let now = now_ms();
-    let day_start = session_keeper_rust::config::local_day_start_ms(now);
+    let day_start = session_keeper::config::local_day_start_ms(now);
     let nudges = std::fs::read_to_string(Config::history_path())
         .unwrap_or_default()
         .lines()
@@ -613,7 +613,7 @@ fn refresh(
         badge.style_context().add_class(status_class(&status));
         badge.set_size_request(118, -1);
         if let Some(v) = view {
-            badge.set_tooltip_text(Some(session_keeper_rust::ui::status_tooltip(&v.status)));
+            badge.set_tooltip_text(Some(session_keeper::ui::status_tooltip(&v.status)));
         }
         if view
             .map(|v| !v.exists && v.status != Status::Unknown)
@@ -1006,7 +1006,7 @@ fn main() {
     }
     let boot_state = State::load();
     set_time_prefs(&boot_state.time_prefs);
-    if session_keeper_rust::state::state_was_corrupt() {
+    if session_keeper::state::state_was_corrupt() {
         let msg = "State file was corrupt: a timestamped backup was saved and defaults were loaded";
         eprintln!("session-keeper: {}", msg);
         log_line(msg);
@@ -1300,7 +1300,7 @@ fn main() {
                     std::process::exit(1);
                 }
             };
-            if let Some(backup) = session_keeper_rust::state::backup_state() {
+            if let Some(backup) = session_keeper::state::backup_state() {
                 println!("Backup saved to {}", backup.display());
             }
             if let Err(e) = imported.save() {
@@ -1422,7 +1422,7 @@ fn main() {
                         x.idle_streak = 0;
                         x.last_action = format!(
                             "kicked {}",
-                            session_keeper_rust::config::format_log_time(now / 1000)
+                            session_keeper::config::format_log_time(now / 1000)
                         );
                     }
                     st.record_nudge(now);
@@ -2121,7 +2121,7 @@ fn main() {
             .and_then(|s| State::from_json(&s).ok())
         {
             Some(new_state) => {
-                let backup = session_keeper_rust::state::backup_state();
+                let backup = session_keeper::state::backup_state();
                 *st_import.borrow_mut() = new_state;
                 let _ = st_import.borrow().save();
                 summary_import.set_label(&format!(
@@ -2429,10 +2429,8 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
                         ..Default::default()
                     });
                     let _ = st_add_result.borrow().save();
-                    summary_add_result.set_label(&format!(
-                        "Added {}",
-                        session_keeper_rust::ui::short_id(&sid)
-                    ));
+                    summary_add_result
+                        .set_label(&format!("Added {}", session_keeper::ui::short_id(&sid)));
                     refresh(
                         &st_add_result,
                         &list_add_result,
@@ -2497,7 +2495,7 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
                         if resp == gtk::ResponseType::Ok {
                             if let Some(id) = combo.active_id() {
                                 let sid = id.to_string();
-                                if session_keeper_rust::state::is_valid_session_id(&sid)
+                                if session_keeper::state::is_valid_session_id(&sid)
                                     && !st.borrow().sessions.iter().any(|s| s.id == sid)
                                 {
                                     st.borrow_mut().sessions.push(Session {
@@ -2514,7 +2512,7 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
                                     let _ = st.borrow().save();
                                     summary.set_label(&format!(
                                         "Added {}",
-                                        session_keeper_rust::ui::short_id(&sid)
+                                        session_keeper::ui::short_id(&sid)
                                     ));
                                     refresh(&st, &list, &views, &filter, &attention);
                                 }
@@ -2549,7 +2547,7 @@ Terminal: --check-now, --status [--json], --watch, --kick <sid>, --models, --set
                             x.idle_streak = 0;
                             x.last_action = format!(
                                 "kicked {}",
-                                session_keeper_rust::config::format_log_time(now / 1000)
+                                session_keeper::config::format_log_time(now / 1000)
                             );
                         }
                         st.record_nudge(now);

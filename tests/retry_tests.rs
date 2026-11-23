@@ -30,7 +30,7 @@ fn retries_once_after_server_error() {
         }
     });
 
-    let result = session_keeper_rust::nudge::send_nudge_with_retry(
+    let result = session_keeper::nudge::send_nudge_with_retry(
         &format!("http://{}", addr),
         "pw",
         "ses_test",

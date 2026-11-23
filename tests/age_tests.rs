@@ -1,4 +1,4 @@
-use session_keeper_rust::ui::format_age;
+use session_keeper::ui::format_age;
 
 #[test]
 fn age_formats_seconds_minutes_hours() {

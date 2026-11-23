@@ -1,4 +1,4 @@
-use session_keeper_rust::state::{states_differ, Session, State};
+use session_keeper::state::{states_differ, Session, State};
 use std::path::PathBuf;
 
 fn dir(tag: &str) -> PathBuf {
@@ -17,7 +17,7 @@ fn corrupt_json_returns_defaults_and_keeps_backup() {
     assert!(s.sessions.is_empty());
     assert!(s.enabled);
     assert!(
-        session_keeper_rust::state::state_was_corrupt(),
+        session_keeper::state::state_was_corrupt(),
         "corrupt load must be reported"
     );
     // A second load before any save must not create another backup.
@@ -133,7 +133,7 @@ fn states_differ_detects_nested_session_change() {
 #[test]
 fn invalid_session_ids_are_rejected() {
     let json = r#"{"sessions":[{"id":"ses_ok"},{"id":"ses_bad/../x"},{"id":"ses_a?x=1"}]}"#;
-    let st = session_keeper_rust::state::State::from_json(json).unwrap();
+    let st = session_keeper::state::State::from_json(json).unwrap();
     assert_eq!(st.sessions.len(), 1);
     assert_eq!(st.sessions[0].id, "ses_ok");
 }
@@ -145,7 +145,7 @@ fn import_backup_preserves_previous_state() {
     let state = d.join("state.json");
     std::fs::write(&state, r#"{"sessions":[{"id":"ses_keep"}]}"#).unwrap();
     std::env::set_var("SESSION_KEEPER_STATE", &state);
-    let backup = session_keeper_rust::state::backup_state().expect("backup expected");
+    let backup = session_keeper::state::backup_state().expect("backup expected");
     assert!(backup.exists());
     assert_eq!(
         std::fs::read_to_string(&backup).unwrap(),

@@ -1,4 +1,4 @@
-use session_keeper_rust::nudge::{fetch_models, switch_model};
+use session_keeper::nudge::{fetch_models, switch_model};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::thread;

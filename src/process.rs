@@ -8,7 +8,7 @@ pub fn pid_alive(pid: i32) -> bool {
     match std::fs::read(&cmdline) {
         Ok(bytes) => std::str::from_utf8(&bytes)
             .unwrap_or("")
-            .contains("session-keeper-rust"),
+            .contains("session-keeper"),
         Err(_) => false,
     }
 }
