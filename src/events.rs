@@ -68,10 +68,11 @@ pub fn watch_events(
     let mut last_error: Option<Instant> = None;
     let mut reconnect_delay: Duration;
     while !stop.load(Ordering::Relaxed) {
-        // ureq's timeout covers the whole request, including reading a long-lived
-        // SSE body. A short value here drops perfectly healthy streams every 30s.
+        // No per-request timeout: ureq's timeout covers the whole request,
+        // including reads, so any finite value eventually kills a healthy SSE
+        // stream. The default agent has no deadline; the stop flag and the
+        // 30-second polling fallback cover shutdown and dead connections.
         let request = ureq::get(&url)
-            .timeout(Duration::from_secs(300))
             .set("Authorization", &auth_header(password))
             .set("Accept", "text/event-stream");
         match request.call() {
