@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.4.4 (2026-11-24)
+
+- SSE watcher no longer imposes any request timeout. The previous 30s and then 5min values caused ureq to terminate healthy event streams on a schedule; the stop flag and 30s polling fallback now cover shutdown and dead connections. Clean EOF reconnects in 200ms.
+
 ## Unreleased
 
 - SSE watcher no longer imposes any request timeout, removing the remaining 5-minute self-cutoff; the stop flag and polling fallback cover shutdown and dead connections.
